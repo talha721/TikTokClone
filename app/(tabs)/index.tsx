@@ -1,11 +1,12 @@
-import { StyleSheet, Text, View } from "react-native";
+import PostListItems from "@/components/PostListItems";
+import { View } from "react-native";
 
 export default function HomeScreen() {
   return (
     <View>
-      <Text>Home Screen</Text>
+      <PostListItems />
     </View>
   );
 }
 
-const styles = StyleSheet.create({});
+// const styles = StyleSheet.create({});
