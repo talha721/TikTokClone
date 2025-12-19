@@ -1,39 +1,129 @@
 // import { useEvent } from "expo";
+import { Post } from "@/types/types";
+import { AntDesign, Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { Dimensions, View } from "react-native";
+import { useCallback } from "react";
+import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-const videoSource = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+type PostListItemsProps = {
+  postItem: Post;
+  isActive: boolean;
+};
 
-export default function PostListItems() {
+export default function PostListItems({ postItem, isActive }: PostListItemsProps) {
   const { height } = Dimensions.get("window");
 
-  const player = useVideoPlayer(videoSource, (player) => {
+  const player = useVideoPlayer(postItem.video_url, (player) => {
     player.loop = true;
-    player.play();
+    // player.play();
   });
 
-  //   const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
+  useFocusEffect(
+    useCallback(() => {
+      if (!player) return;
+
+      try {
+        if (isActive) {
+          player.play();
+        }
+      } catch (error) {
+        console.log("🚀 ~ PostListItems ~ error:", error);
+      }
+
+      return () => {
+        try {
+          if (player && isActive) {
+            player.pause();
+          }
+        } catch (error) {
+          console.log("🚀 ~ PostListItems ~ error:", error);
+        }
+      };
+    }, [isActive, player])
+  );
 
   return (
-    <View style={{ height }}>
+    <View style={{ height: height - 77 }}>
       <VideoView style={{ flex: 1 }} player={player} contentFit="cover" nativeControls={false} />
+
+      <View style={styles.interactionBar}>
+        <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Pressed")}>
+          <AntDesign name="heart" size={24} color="white" />
+          <Text style={styles.interactionText}>{postItem.nrOfLikes[0].count || 0}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Comments Pressed")}>
+          <Ionicons name="chatbubble" size={24} color="white" />
+          <Text style={styles.interactionText}>{postItem.nrOfComments[0].count || 0}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Share Pressed")}>
+          <Ionicons name="arrow-redo" size={24} color="white" />
+          <Text style={styles.interactionText}>{postItem.nrOfShares[0].count || 0}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.avatar} onPress={() => console.log("Profile Pressed")}>
+          <Text style={styles.avatarText}>{postItem.user.username.charAt(0).toUpperCase()}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.videoInfo}>
+        <Text style={styles.username}>{postItem.user.username}</Text>
+        <Text style={styles.description}>{postItem.description}</Text>
+      </View>
     </View>
   );
 }
 
-// const styles = StyleSheet.create({
-//   contentContainer: {
-//     flex: 1,
-//     padding: 10,
-//     alignItems: "center",
-//     justifyContent: "center",
-//     paddingHorizontal: 50,
-//   },
-//   video: {
-//     width: 350,
-//     height: 500,
-//   },
-//   controlsContainer: {
-//     padding: 10,
-//   },
-// });
+const styles = StyleSheet.create({
+  interactionBar: {
+    position: "absolute",
+    right: 20,
+    bottom: 20,
+    alignItems: "center",
+    gap: 25,
+  },
+  interactionButton: {
+    alignItems: "center",
+    gap: 5,
+  },
+  interactionText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "white",
+    textAlign: "center",
+    lineHeight: 40,
+    color: "black",
+    fontWeight: "600",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: {
+    color: "black",
+    fontSize: 25,
+    fontWeight: "600",
+  },
+  videoInfo: {
+    position: "absolute",
+    left: 20,
+    bottom: 20,
+    right: 100,
+    gap: 5,
+  },
+  username: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 16,
+  },
+  description: {
+    color: "white",
+    fontSize: 14,
+  },
+});
