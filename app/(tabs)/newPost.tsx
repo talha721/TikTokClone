@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useRef, useState } from "react";
-import { Button, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 const NewPost = () => {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -17,7 +18,7 @@ const NewPost = () => {
   const [permission, requestPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
 
-  const videoPlayer = useVideoPlayer(null, (player) => {
+  const videoPlayer = useVideoPlayer("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", (player) => {
     player.loop = true;
   });
 
@@ -54,11 +55,25 @@ const NewPost = () => {
     setFacing((current) => (current === "back" ? "front" : "back"));
   };
 
-  const selectFromGallery = () => {
-    // router.push("/(tabs)/newPost/gallery");
+  const selectFromGallery = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsEditing: true,
+      aspect: [9, 16],
+    });
+
+    if (!result.canceled) {
+      setVideo(result.assets[0].uri);
+      await videoPlayer.replaceAsync({ uri: result.assets[0].uri });
+      videoPlayer.play();
+    }
   };
 
-  const dismissVideo = () => {};
+  const dismissVideo = () => {
+    setVideo("");
+    videoPlayer.release();
+  };
+
   const postVideo = () => {};
 
   const startRecording = async () => {
@@ -66,9 +81,9 @@ const NewPost = () => {
     // Start recording logic here
     const recordingVideo = await cameraRef.current?.recordAsync();
     if (recordingVideo?.uri) {
-      // Handle the recorded video (e.g., navigate to a preview screen)
-      console.log("Video recorded:", recordingVideo.uri);
       setVideo(recordingVideo.uri);
+      await videoPlayer.replaceAsync({ uri: recordingVideo.uri });
+      videoPlayer.play();
     }
   };
 
@@ -99,35 +114,28 @@ const NewPost = () => {
     return (
       <View style={{ flex: 1 }}>
         <Ionicons name="close" size={40} color="white" onPress={dismissVideo} style={styles.closeIcon} />
-        <VideoView player={videoPlayer} contentFit="cover" style={styles.video} />
 
-        <TextInput
-          placeholder="Write a caption..."
-          style={{ position: "absolute", bottom: 100, left: 10, right: 10, height: 40, backgroundColor: "white", paddingHorizontal: 10, borderRadius: 5 }}
-          multiline
-          value={description}
-          onChangeText={setDescription}
-        />
-        <TouchableOpacity
-          style={{
-            position: "absolute",
-            bottom: 40,
-            left: 10,
-            right: 10,
-            backgroundColor: "blue",
-            padding: 15,
-            borderRadius: 5,
-            alignItems: "center",
-          }}
-          onPress={postVideo}
-        >
-          <Text style={{ color: "white", fontWeight: "bold" }}>Upload</Text>
-        </TouchableOpacity>
+        <View style={styles.videoWrapper}>
+          <VideoView player={videoPlayer} contentFit="cover" style={styles.video} />
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.descriptionContainer} keyboardVerticalOffset={20}>
+          <TextInput placeholder="Write a caption..." style={styles.input} multiline value={description} onChangeText={setDescription} />
+
+          <TouchableOpacity style={styles.postButton} onPress={postVideo}>
+            <Text style={styles.postText}>Upload</Text>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </View>
     );
   };
 
-  return <>{video ? renderRecordedVideo() : renderCamera()}</>;
+  return (
+    <>
+      {/* {renderRecordedVideo()} */}
+      {video ? renderRecordedVideo() : renderCamera()}
+    </>
+  );
 };
 
 export default NewPost;
@@ -181,8 +189,39 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 50,
     left: 10,
+    zIndex: 1,
   },
   video: {
+    aspectRatio: 9 / 16,
+  },
+  input: {
     flex: 1,
+    color: "white",
+    backgroundColor: "#111",
+    borderRadius: 10,
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    maxHeight: 100,
+  },
+  postText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 17,
+  },
+  postButton: {
+    backgroundColor: "#ff4040",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignSelf: "flex-end",
+  },
+  videoWrapper: {
+    flex: 1,
+  },
+  descriptionContainer: {
+    paddingHorizontal: 5,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 15,
   },
 });
