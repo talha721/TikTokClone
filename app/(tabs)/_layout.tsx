@@ -34,17 +34,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="inbox"
-        options={{
-          title: "Inbox",
-          tabBarIcon: ({ color }) => <Feather name="inbox" size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="newPost"
         options={{
           title: "New Post",
           tabBarIcon: ({ color }) => <Feather name="plus-circle" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="inbox"
+        options={{
+          title: "Inbox",
+          tabBarIcon: ({ color }) => <Feather name="inbox" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
