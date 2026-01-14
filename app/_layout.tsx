@@ -3,7 +3,10 @@ import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 // import { Stack, useRouter, useSegments } from "expo-router";
 // import { useEffect } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "react-native-reanimated";
+
+const queryClient = new QueryClient();
 
 // import { useColorScheme } from "@/hooks/use-color-scheme";
 
@@ -39,10 +42,12 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={myTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(protected)" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      </Stack>
+      <QueryClientProvider client={queryClient}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(protected)" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        </Stack>
+      </QueryClientProvider>
       {/* <StatusBar style="auto" /> */}
     </ThemeProvider>
   );
