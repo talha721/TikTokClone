@@ -13,8 +13,9 @@ type PostListItemsProps = {
 
 export default function PostListItems({ postItem, isActive }: PostListItemsProps) {
   const { height } = Dimensions.get("window");
+  const { nrOfComments, description, user, video_url } = postItem;
 
-  const player = useVideoPlayer(postItem.video_url, (player) => {
+  const player = useVideoPlayer(video_url, (player) => {
     player.loop = true;
     // player.play();
   });
@@ -45,32 +46,32 @@ export default function PostListItems({ postItem, isActive }: PostListItemsProps
 
   return (
     <View style={{ height: height - 77 }}>
-      <VideoView style={{ flex: 1 }} player={player} contentFit="cover" nativeControls={false} />
+      <VideoView style={{ flex: 1 }} player={player} contentFit="cover" nativeControls={true} />
 
       <View style={styles.interactionBar}>
         <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Pressed")}>
           <AntDesign name="heart" size={24} color="white" />
-          <Text style={styles.interactionText}>{postItem.nrOfLikes[0].count || 0}</Text>
+          <Text style={styles.interactionText}>{0}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Comments Pressed")}>
           <Ionicons name="chatbubble" size={24} color="white" />
-          <Text style={styles.interactionText}>{postItem.nrOfComments[0].count || 0}</Text>
+          <Text style={styles.interactionText}>{nrOfComments[0].count || 0}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Share Pressed")}>
           <Ionicons name="arrow-redo" size={24} color="white" />
-          <Text style={styles.interactionText}>{postItem.nrOfShares[0].count || 0}</Text>
+          <Text style={styles.interactionText}>{0}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.avatar} onPress={() => console.log("Profile Pressed")}>
-          <Text style={styles.avatarText}>{postItem.user.username.charAt(0).toUpperCase()}</Text>
+          <Text style={styles.avatarText}>{user.username.charAt(0).toUpperCase()}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.videoInfo}>
-        <Text style={styles.username}>{postItem.user.username}</Text>
-        <Text style={styles.description}>{postItem.description}</Text>
+        <Text style={styles.username}>{user.username}</Text>
+        <Text style={styles.description}>{description}</Text>
       </View>
     </View>
   );

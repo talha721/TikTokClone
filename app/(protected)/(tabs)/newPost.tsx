@@ -1,11 +1,15 @@
+import { createPost, uploadVideoToStorage } from "@/services/posts";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useRef, useState } from "react";
-import { Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 const NewPost = () => {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -13,13 +17,42 @@ const NewPost = () => {
   const [video, setVideo] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
+  const user = useAuthStore((state) => state.user);
+
   const cameraRef = useRef<CameraView>(null);
+  const queryClient = useQueryClient();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
 
-  const videoPlayer = useVideoPlayer("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4", (player) => {
+  const videoPlayer = useVideoPlayer(null, (player) => {
     player.loop = true;
+  });
+
+  const { mutate: createNewPost, isPending } = useMutation({
+    mutationFn: async ({ video, description }: { video: string; description: string }) => {
+      const fileExtension = video.split(".").pop() || "mp4";
+      const fileName = `${user?.id}/${Date.now()}.${fileExtension}`;
+
+      const file = new FileSystem.File(video);
+      const fileBuffer = await file.bytes();
+
+      if (user) {
+        const videoUrl = await uploadVideoToStorage({ fileName, fileExtension, fileBuffer });
+        await createPost({ video_url: videoUrl, description, user_id: user?.id });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["posts"] });
+      videoPlayer.release();
+      setDescription("");
+      setVideo("");
+      router.replace("/");
+    },
+    onError: (error) => {
+      console.log("Error creating post:", error.message);
+      Alert.alert("Error creating post:", error.message);
+    },
   });
 
   useEffect(() => {
@@ -74,7 +107,13 @@ const NewPost = () => {
     videoPlayer.release();
   };
 
-  const postVideo = () => {};
+  const postVideo = () => {
+    if (!video) {
+      Alert.alert("No video to post");
+      return;
+    }
+    createNewPost({ video, description });
+  };
 
   const startRecording = async () => {
     setIsRecording(true);

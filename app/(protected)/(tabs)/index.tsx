@@ -1,9 +1,10 @@
-import post from "@/assets/data/post.json";
 import FeedTab from "@/components/FeedTab";
 import PostListItems from "@/components/PostListItems";
+import { fetchPosts } from "@/services/posts";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Dimensions, FlatList, StyleSheet, View, ViewToken } from "react-native";
+import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View, ViewToken } from "react-native";
 
 const TABS = {
   EXPLORE: "Explore",
@@ -17,11 +18,32 @@ export default function HomeScreen() {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>(TABS.FOR_YOU);
 
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["posts"],
+    queryFn: fetchPosts,
+    // queryFn: () => new Promise((resolve) => setTimeout(() => resolve(post), 1000)), // Mocking fetchPosts with a delay
+  });
+
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0) {
       setCurrentIndex(viewableItems[0]?.index || 0);
     }
   });
+
+  if (isLoading) {
+    return <ActivityIndicator size="large" color="#0000ff" style={{ flex: 1, justifyContent: "center", alignItems: "center" }} />;
+  }
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Ionicons name="alert-circle" size={50} color="red" />
+        <View style={{ marginTop: 10 }}>
+          <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>Error fetching posts. Please try again later.</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View>
@@ -36,7 +58,7 @@ export default function HomeScreen() {
       </View>
 
       <FlatList
-        data={post}
+        data={data || []}
         renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} />}
         keyExtractor={(item, index) => (item && (item as any).id != null ? String((item as any).id) : String(index))}
         showsVerticalScrollIndicator={false}
