@@ -2,8 +2,8 @@ import FeedTab from "@/components/FeedTab";
 import PostListItems from "@/components/PostListItems";
 import { fetchPosts } from "@/services/posts";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View, ViewToken } from "react-native";
 
 const TABS = {
@@ -18,11 +18,23 @@ export default function HomeScreen() {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>(TABS.FOR_YOU);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["posts"],
-    queryFn: fetchPosts,
-    // queryFn: () => new Promise((resolve) => setTimeout(() => resolve(post), 1000)), // Mocking fetchPosts with a delay
+    queryFn: ({ pageParam }) => fetchPosts(pageParam),
+    initialPageParam: { limit: 3, cursor: undefined },
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length === 0) {
+        return undefined;
+      }
+
+      return {
+        limit: 1,
+        cursor: lastPage[lastPage.length - 1].id,
+      };
+    },
   });
+
+  const posts = useMemo(() => data?.pages.flat() || [], [data]);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0) {
@@ -58,15 +70,24 @@ export default function HomeScreen() {
       </View>
 
       <FlatList
-        data={data || []}
+        data={posts}
         renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} />}
-        keyExtractor={(item, index) => (item && (item as any).id != null ? String((item as any).id) : String(index))}
+        getItemLayout={(data, index) => ({
+          length: height - 80,
+          offset: (height - 80) * index,
+          index,
+        })}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={5}
         showsVerticalScrollIndicator={false}
         snapToInterval={height - 80}
-        decelerationRate="fast"
-        disableIntervalMomentum={true}
+        decelerationRate={"fast"}
+        disableIntervalMomentum
         onViewableItemsChanged={onViewableItemsChanged.current}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        onEndReached={() => !isFetchingNextPage && hasNextPage && fetchNextPage()}
+        onEndReachedThreshold={2}
       />
     </View>
   );
