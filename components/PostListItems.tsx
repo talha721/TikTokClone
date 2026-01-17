@@ -4,15 +4,15 @@ import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useCallback } from "react";
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type PostListItemsProps = {
   postItem: Post;
   isActive: boolean;
+  videoHeight: number;
 };
 
-export default function PostListItems({ postItem, isActive }: PostListItemsProps) {
-  const { height } = Dimensions.get("window");
+export default function PostListItems({ postItem, isActive, videoHeight }: PostListItemsProps) {
   const { nrOfComments, description, user, video_url } = postItem;
 
   const player = useVideoPlayer(video_url, (player) => {
@@ -41,12 +41,12 @@ export default function PostListItems({ postItem, isActive }: PostListItemsProps
           console.log("🚀 ~ PostListItems ~ error:", error);
         }
       };
-    }, [isActive, player])
+    }, [isActive, player]),
   );
 
   return (
-    <View style={{ height: height - 77 }}>
-      <VideoView style={{ flex: 1 }} player={player} contentFit="cover" nativeControls={true} />
+    <View style={[styles.container, { height: videoHeight }]}>
+      <VideoView style={styles.video} player={player} contentFit="cover" nativeControls={false} />
 
       <View style={styles.interactionBar}>
         <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Pressed")}>
@@ -78,10 +78,18 @@ export default function PostListItems({ postItem, isActive }: PostListItemsProps
 }
 
 const styles = StyleSheet.create({
+  container: {
+    backgroundColor: "black",
+    overflow: "hidden",
+  },
+  video: {
+    flex: 1,
+    width: "100%",
+  },
   interactionBar: {
     position: "absolute",
     right: 20,
-    bottom: 20,
+    bottom: 100,
     alignItems: "center",
     gap: 25,
   },
@@ -114,7 +122,7 @@ const styles = StyleSheet.create({
   videoInfo: {
     position: "absolute",
     left: 20,
-    bottom: 20,
+    bottom: 100,
     right: 100,
     gap: 5,
   },

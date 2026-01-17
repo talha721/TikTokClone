@@ -4,7 +4,7 @@ import { fetchPosts } from "@/services/posts";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View, ViewToken } from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, useWindowDimensions, View, ViewToken } from "react-native";
 
 const TABS = {
   EXPLORE: "Explore",
@@ -12,8 +12,12 @@ const TABS = {
   FOR_YOU: "For You",
 };
 
+const viewabilityConfig = {
+  itemVisiblePercentThreshold: 80,
+};
+
 export default function HomeScreen() {
-  const { height } = Dimensions.get("window");
+  const { height } = useWindowDimensions();
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>(TABS.FOR_YOU);
@@ -58,7 +62,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <View>
+    <View style={styles.container}>
       <View style={styles.topBar}>
         <MaterialIcons name="live-tv" size={24} color="grey" />
         <View style={styles.navigationBar}>
@@ -71,21 +75,26 @@ export default function HomeScreen() {
 
       <FlatList
         data={posts}
-        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} />}
+        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} videoHeight={height} />}
+        keyExtractor={(item, index) => item.id?.toString() || index.toString()}
         getItemLayout={(data, index) => ({
-          length: height - 80,
-          offset: (height - 80) * index,
+          length: height,
+          offset: height * index,
           index,
         })}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={5}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={3}
         showsVerticalScrollIndicator={false}
-        snapToInterval={height - 80}
+        snapToInterval={height}
+        snapToAlignment="start"
         decelerationRate={"fast"}
-        disableIntervalMomentum
+        disableIntervalMomentum={true}
+        pagingEnabled={true}
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
         onViewableItemsChanged={onViewableItemsChanged.current}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        viewabilityConfig={viewabilityConfig}
         onEndReached={() => !isFetchingNextPage && hasNextPage && fetchNextPage()}
         onEndReachedThreshold={2}
       />
@@ -94,19 +103,24 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "black",
+  },
   navigationBar: {
     flexDirection: "row",
     justifyContent: "center",
     gap: 30,
-    // alignItems: "center",
-    // marginVertical: 10,
     flex: 1,
   },
   topBar: {
     flexDirection: "row",
     position: "absolute",
-    top: 70,
+    top: 50,
+    left: 0,
+    right: 0,
     zIndex: 1,
     paddingHorizontal: 20,
+    alignItems: "center",
   },
 });
