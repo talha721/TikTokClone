@@ -3,8 +3,9 @@ import { Post } from "@/types/types";
 import { AntDesign, Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import CommentsModal from "./CommentsModal";
 
 type PostListItemsProps = {
   postItem: Post;
@@ -14,6 +15,7 @@ type PostListItemsProps = {
 
 export default function PostListItems({ postItem, isActive, videoHeight }: PostListItemsProps) {
   const { nrOfComments, description, user, video_url } = postItem;
+  const [showComments, setShowComments] = useState<boolean>(false);
 
   const player = useVideoPlayer(video_url, (player) => {
     player.loop = true;
@@ -54,7 +56,7 @@ export default function PostListItems({ postItem, isActive, videoHeight }: PostL
           <Text style={styles.interactionText}>{0}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.interactionButton} onPress={() => console.log("Comments Pressed")}>
+        <TouchableOpacity style={styles.interactionButton} onPress={() => setShowComments(true)}>
           <Ionicons name="chatbubble" size={24} color="white" />
           <Text style={styles.interactionText}>{nrOfComments[0].count || 0}</Text>
         </TouchableOpacity>
@@ -73,6 +75,8 @@ export default function PostListItems({ postItem, isActive, videoHeight }: PostL
         <Text style={styles.username}>{user.username}</Text>
         <Text style={styles.description}>{description}</Text>
       </View>
+
+      <CommentsModal visible={showComments} onClose={() => setShowComments(false)} postId={postItem.id} commentCount={nrOfComments[0].count || 0} />
     </View>
   );
 }

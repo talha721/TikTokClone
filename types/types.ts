@@ -26,6 +26,7 @@ export type Comment = {
   user_id: string;
   comment: string;
   created_at: string;
+  user?: User;
 };
 
 export type NewCommentInput = {
