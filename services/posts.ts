@@ -12,8 +12,12 @@ type Paginationinput = {
   limit?: number;
 };
 
-export const fetchPosts = async (pageParams: Paginationinput) => {
-  let query = supabase.from("posts").select("*, user:profiles(*), nrOfComments:comments(count)").order("id", { ascending: false });
+export const fetchPosts = async (pageParams: Paginationinput, currentUserId: string) => {
+  let query = supabase
+    .from("posts")
+    .select("*, user:profiles(*), nrOfComments:comments(count), nrOfLikes:post_likes(count), user_liked:post_likes(user_id)")
+    .eq("post_likes.user_id", currentUserId)
+    .order("id", { ascending: false });
 
   if (pageParams.limit) {
     query = query.limit(pageParams.limit);
@@ -24,7 +28,15 @@ export const fetchPosts = async (pageParams: Paginationinput) => {
   }
 
   const { data } = await query.throwOnError();
-  return data;
+
+  return data?.map((post: any) => ({
+    ...post,
+    // Convert the array to a simple boolean
+    isLikedByMe: post.user_liked && post.user_liked.length > 0,
+    // Extract the counts from the array objects Supabase returns
+    likesCount: post.nrOfLikes?.[0]?.count || 0,
+    commentsCount: post.nrOfComments?.[0]?.count || 0,
+  }));
 };
 
 export const uploadVideoToStorage = async (storageProps: StorageInput) => {
@@ -50,4 +62,33 @@ export const createPost = async (postData: PostInput) => {
   }
 
   return data;
+};
+
+export const likePostService = async (postId: string, userId: string) => {
+  const { data: existing } = await supabase.from("post_likes").select("id").eq("post_id", postId).eq("user_id", userId).maybeSingle();
+  const { data: postData } = await supabase.from("posts").select("likes_count").eq("id", postId).single();
+
+  let currentCount = postData?.likes_count || 0;
+
+  if (existing) {
+    await supabase.from("post_likes").delete().eq("id", existing.id);
+
+    if (currentCount !== 0) {
+      await supabase
+        .from("posts")
+        .update({ likes_count: currentCount - 1 })
+        .eq("id", postId);
+    }
+
+    return { action: "unliked" };
+  } else {
+    await supabase.from("post_likes").insert({ post_id: postId, user_id: userId });
+
+    await supabase
+      .from("posts")
+      .update({ likes_count: currentCount + 1 })
+      .eq("id", postId);
+
+    return { action: "liked" };
+  }
 };

@@ -9,9 +9,13 @@ export type Post = {
   video_url: string;
   description: string;
   user: User;
-  nrOfLikes: { count: number }[];
-  nrOfComments: { count: number }[];
-  nrOfShares: { count: number }[];
+  // nrOfLikes: { count: number }[];
+  // nrOfComments: { count: number }[];
+  // nrOfShares: { count: number }[];
+  // user_liked: { id: string }[]; // Array to check if current user liked the post
+  isLikedByMe: boolean;
+  likesCount: number;
+  commentsCount: number;
 };
 
 export type PostInput = {

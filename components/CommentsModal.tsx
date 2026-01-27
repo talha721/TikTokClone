@@ -1,4 +1,4 @@
-import { createComment, fetchCommentsService, likeComment } from "@/services/comments";
+import { createComment, deleteComment, fetchCommentsService, likeComment } from "@/services/comments";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Comment } from "@/types/types";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
@@ -102,6 +102,15 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
     }
   };
 
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await deleteComment(commentId);
+      fetchComments();
+    } catch (error) {
+      console.log("🚀 ~ handleDeleteComment ~ error:", error);
+    }
+  };
+
   const renderComment = ({ item }: { item: Comment }) => (
     <View style={styles.commentItem}>
       <View style={styles.commentAvatar}>
@@ -112,8 +121,13 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
         <Text style={styles.commentText}>{item.comment}</Text>
         <View style={styles.commentFooter}>
           <Text style={styles.commentTime}>{new Date(item.created_at).toLocaleDateString()}</Text>
-          <TouchableOpacity>
+          <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }}>
             <Text style={styles.replyText}>Reply</Text>
+            {item.user_id === currentUserId && (
+              <Text style={styles.deleteText} onPress={() => handleDeleteComment(item.id)}>
+                Delete
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -339,6 +353,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     fontWeight: "600",
+  },
+  deleteText: {
+    fontSize: 12,
+    color: "red",
+    fontWeight: "600",
+    marginLeft: 12,
   },
   likeButton: {
     padding: 8,

@@ -35,12 +35,19 @@ export const fetchCommentsService = async (postId: string, currentUserId: string
 };
 
 export const createComment = async (postId: string, comment: string, userId: string) => {
-  const { data, error } = await supabase.from("comments").insert({ post_id: postId, comment, user_id: userId }).throwOnError();
+  const { data: comment_data, error: commentErr } = await supabase.from("comments").insert({ post_id: postId, comment, user_id: userId }).throwOnError();
 
+  if (commentErr) throw commentErr;
+
+  return comment_data;
+};
+
+export const deleteComment = async (commentId: string) => {
+  const { error } = await supabase.from("comments").delete().eq("id", commentId).throwOnError();
   if (error) {
     throw error;
   }
-  return data;
+  return true;
 };
 
 // ** Like Comment Service ** //

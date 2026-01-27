@@ -1,6 +1,7 @@
 import FeedTab from "@/components/FeedTab";
 import PostListItems from "@/components/PostListItems";
 import { fetchPosts } from "@/services/posts";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
@@ -22,9 +23,11 @@ export default function HomeScreen() {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>(TABS.FOR_YOU);
 
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  const user = useAuthStore((state) => state.user);
+
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
     queryKey: ["posts"],
-    queryFn: ({ pageParam }) => fetchPosts(pageParam),
+    queryFn: ({ pageParam }) => fetchPosts(pageParam, user?.id as string),
     initialPageParam: { limit: 3, cursor: undefined },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length === 0) {
@@ -75,7 +78,7 @@ export default function HomeScreen() {
 
       <FlatList
         data={posts}
-        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} videoHeight={height} />}
+        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} videoHeight={height} refetch={refetch} />}
         keyExtractor={(item, index) => item.id?.toString() || index.toString()}
         getItemLayout={(data, index) => ({
           length: height,
