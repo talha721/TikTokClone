@@ -1,10 +1,9 @@
-import { createComment, fetchCommentsService } from "@/services/comments";
+import { createComment, fetchCommentsService, likeComment } from "@/services/comments";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Comment } from "@/types/types";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Animated,
   Dimensions,
   FlatList,
@@ -29,7 +28,7 @@ type CommentsModalProps = {
 const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModalProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [loading, setLoading] = useState(false);
+  // const [loading, setLoading] = useState(false);
   const slideAnim = useRef(new Animated.Value(Dimensions.get("window").height)).current;
 
   const user = useAuthStore((state) => state.user);
@@ -45,7 +44,7 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
         friction: 11,
       }).start();
 
-      // TODO: Fetch comments from API
+      // Fetch comments from API
       fetchComments();
     } else {
       // Animate modal down
@@ -58,14 +57,14 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
   }, [visible]);
 
   const fetchComments = async () => {
-    setLoading(true);
+    // setLoading(true);
     try {
-      const data = await fetchCommentsService(postId);
+      const data = await fetchCommentsService(postId, currentUserId);
       setComments(data);
     } catch (error) {
       console.error("Error fetching comments:", error);
     } finally {
-      setLoading(false);
+      // setLoading(false);
     }
   };
 
@@ -89,7 +88,19 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
       console.error("Error adding comment:", error);
     }
   };
-  console.log("🚀 ~ CommentsModal ~ comments:", comments);
+  // console.log("🚀 ~ CommentsModal ~ comments:", comments);
+
+  const handleCommentLike = async (commentId: string) => {
+    if (!currentUserId) return;
+
+    try {
+      await likeComment(commentId, currentUserId);
+    } catch (error) {
+      console.log("🚀 ~ handleCommentLike ~ error:", error);
+    } finally {
+      fetchComments();
+    }
+  };
 
   const renderComment = ({ item }: { item: Comment }) => (
     <View style={styles.commentItem}>
@@ -106,8 +117,13 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
           </TouchableOpacity>
         </View>
       </View>
-      <TouchableOpacity style={styles.likeButton}>
-        <FontAwesome name="heart-o" size={20} color="black" />
+      <TouchableOpacity style={styles.likeButton} onPress={() => handleCommentLike(item.id)}>
+        <FontAwesome
+          name={item.liked_by_current_user && item.likes_count! > 0 ? "heart" : "heart-o"}
+          size={20}
+          color={item.liked_by_current_user && item.likes_count! > 0 ? "red" : "black"}
+        />
+        <Text style={{ marginTop: 4, fontSize: 12, textAlign: "center" }}>{item.likes_count || 0}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -138,7 +154,24 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
 
             {/* Comments List */}
             <View style={styles.commentsContainer}>
-              {loading ? (
+              {comments.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="chatbubble-outline" size={48} color="#ccc" />
+                  <Text style={styles.emptyText}>No comments yet</Text>
+                  <Text style={styles.emptySubtext}>Be the first to comment!</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={comments}
+                  renderItem={renderComment}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                />
+              )}
+
+              {/* COMMENTS WITH LOADING INDICATOR */}
+              {/* {loading ? (
                 <ActivityIndicator size="large" color="#000" style={styles.loader} />
               ) : comments.length === 0 ? (
                 <View style={styles.emptyState}>
@@ -154,7 +187,7 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
                   contentContainerStyle={styles.listContent}
                   showsVerticalScrollIndicator={false}
                 />
-              )}
+              )} */}
             </View>
 
             {/* Input Section */}

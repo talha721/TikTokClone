@@ -27,6 +27,8 @@ export type Comment = {
   comment: string;
   created_at: string;
   user?: User;
+  likes_count?: number;
+  liked_by_current_user?: boolean;
 };
 
 export type NewCommentInput = {
