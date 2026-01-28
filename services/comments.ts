@@ -36,8 +36,15 @@ export const fetchCommentsService = async (postId: string, currentUserId: string
 
 export const createComment = async (postId: string, comment: string, userId: string) => {
   const { data: comment_data, error: commentErr } = await supabase.from("comments").insert({ post_id: postId, comment, user_id: userId }).throwOnError();
+  const { data: post_data } = await supabase.from("posts").select("comments_count").eq("id", postId).single();
 
   if (commentErr) throw commentErr;
+
+  let currentCount = post_data?.comments_count || 0;
+  await supabase
+    .from("posts")
+    .update({ comments_count: currentCount + 1 })
+    .eq("id", postId);
 
   return comment_data;
 };

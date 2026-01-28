@@ -17,7 +17,6 @@ type PostListItemsProps = {
 };
 
 export default function PostListItems({ postItem, isActive, videoHeight, refetch }: PostListItemsProps) {
-  console.log("🚀 ~ PostListItems ~ postItem:", postItem);
   // console.log("🚀 ~ PostListItems ~ postItem:", postItem);
   const { description, user, video_url, isLikedByMe, likesCount, commentsCount } = postItem;
 
@@ -99,7 +98,7 @@ export default function PostListItems({ postItem, isActive, videoHeight, refetch
         <Text style={styles.description}>{description}</Text>
       </View>
 
-      <CommentsModal visible={showComments} onClose={() => setShowComments(false)} postId={postItem.id} commentCount={commentsCount} />
+      <CommentsModal visible={showComments} onClose={() => setShowComments(false)} postId={postItem.id} commentCount={commentsCount} refetch={refetch} />
     </View>
   );
 }

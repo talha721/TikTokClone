@@ -23,9 +23,10 @@ type CommentsModalProps = {
   onClose: () => void;
   postId: string;
   commentCount: number;
+  refetch: () => void;
 };
 
-const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModalProps) => {
+const CommentsModal = ({ visible, onClose, postId, commentCount, refetch }: CommentsModalProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   // const [loading, setLoading] = useState(false);
@@ -82,6 +83,7 @@ const CommentsModal = ({ visible, onClose, postId, commentCount }: CommentsModal
         created_at: new Date().toISOString(),
       };
       fetchComments();
+      refetch();
       setComments([newCommentObj, ...comments]);
       setNewComment("");
     } catch (error) {
