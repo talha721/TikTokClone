@@ -1,4 +1,6 @@
-import React, { FC, useState } from "react";
+import { fetchPosts } from "@/services/posts";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import React, { FC, useMemo, useState } from "react";
 import { Alert, Dimensions, FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "../../../components/themed-text";
@@ -6,39 +8,6 @@ import { ThemedView } from "../../../components/themed-view";
 import { useAuthStore } from "../../../stores/useAuthStore";
 
 const windowWidth = Dimensions.get("window").width;
-
-const samplePosts = [
-  {
-    id: "1",
-    thumbnail: "https://picsum.photos/id/1015/400/400",
-    videoUri: "https://d23dyxeqlo5psv.cloudfront.net/big_buck_bunny.mp4",
-  },
-  {
-    id: "2",
-    thumbnail: "https://picsum.photos/id/1025/400/400",
-    videoUri: "https://www.w3schools.com/html/mov_bbb.mp4",
-  },
-  {
-    id: "3",
-    thumbnail: "https://picsum.photos/id/1027/400/400",
-    videoUri: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
-  },
-  {
-    id: "4",
-    thumbnail: "https://picsum.photos/id/1035/400/400",
-    videoUri: "https://samplelib.com/lib/preview/mp4/sample-10s.mp4",
-  },
-  {
-    id: "5",
-    thumbnail: "https://picsum.photos/id/1050/400/400",
-    videoUri: "https://download.samplelib.com/mp4/sample-20s.mp4",
-  },
-  {
-    id: "6",
-    thumbnail: "https://picsum.photos/id/1069/400/400",
-    videoUri: "https://download.samplelib.com/mp4/sample-15s.mp4",
-  },
-];
 
 const Profile: FC = () => {
   const logout = useAuthStore((s) => s.logout);
@@ -48,6 +17,25 @@ const Profile: FC = () => {
   // const [modalVisible, setModalVisible] = useState(false);
   // const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   // const videoRef = useRef<any>(null);
+
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
+    queryKey: ["posts"],
+    queryFn: ({ pageParam }) => fetchPosts(pageParam, user?.id as string),
+    initialPageParam: { limit: 3, cursor: undefined },
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length === 0) {
+        return undefined;
+      }
+
+      return {
+        limit: 1,
+        cursor: lastPage[lastPage.length - 1].id,
+      };
+    },
+  });
+
+  const posts = useMemo(() => data?.pages.flat() || [], [data]);
+  console.log("🚀 ~ Profile ~ posts:", posts);
 
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -66,7 +54,7 @@ const Profile: FC = () => {
     ]);
   };
 
-  const renderPost = ({ item }: { item: { id: string; thumbnail?: string; videoUri?: string } }) => (
+  const renderPost = ({ item }: { item: { id: string; thumbnail?: string; video_url?: string } }) => (
     <Pressable
       onPress={() => {
         // if (item.videoUri) {
@@ -75,7 +63,7 @@ const Profile: FC = () => {
         // }
       }}
     >
-      <Image source={{ uri: item.thumbnail || item.videoUri }} style={styles.postImage} />
+      <Image source={{ uri: item.thumbnail || item.video_url }} style={styles.postImage} />
     </Pressable>
   );
 
@@ -110,21 +98,21 @@ const Profile: FC = () => {
               </Pressable>
             </View>
 
-            <Text style={styles.bio} numberOfLines={2}>
+            {/* <Text style={styles.bio} numberOfLines={2}>
               {user?.username ? `Hey, I'm ${user.username}. Sharing fun short videos.` : "Passionate about cats and short videos."}
-            </Text>
+            </Text> */}
 
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>128</ThemedText>
+                <ThemedText style={styles.statNumber}>{posts.length}</ThemedText>
                 <Text style={styles.statLabel}>Posts</Text>
               </View>
               <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>12.3K</ThemedText>
+                <ThemedText style={styles.statNumber}>0</ThemedText>
                 <Text style={styles.statLabel}>Followers</Text>
               </View>
               <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>480</ThemedText>
+                <ThemedText style={styles.statNumber}>0 </ThemedText>
                 <Text style={styles.statLabel}>Following</Text>
               </View>
             </View>
@@ -134,7 +122,7 @@ const Profile: FC = () => {
         <View style={styles.divider} />
 
         <FlatList
-          data={samplePosts}
+          data={posts}
           keyExtractor={(i) => i.id}
           renderItem={renderPost}
           numColumns={3}

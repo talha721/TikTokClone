@@ -16,6 +16,7 @@ export type Post = {
   isLikedByMe: boolean;
   likesCount: number;
   commentsCount: number;
+  thumbnail: string;
 };
 
 export type PostInput = {

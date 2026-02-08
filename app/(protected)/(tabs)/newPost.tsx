@@ -9,7 +9,7 @@ import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const NewPost = () => {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -159,10 +159,10 @@ const NewPost = () => {
         </View>
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.descriptionContainer} keyboardVerticalOffset={20}>
-          <TextInput placeholder="Write a caption..." style={styles.input} multiline value={description} onChangeText={setDescription} />
+          {/* <TextInput placeholder="Write a caption..." style={styles.input} multiline value={description} onChangeText={setDescription} /> */}
 
           <TouchableOpacity style={styles.postButton} onPress={postVideo}>
-            <Text style={styles.postText}>Upload</Text>
+            <Text style={styles.postText}>Next</Text>
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </View>
@@ -249,9 +249,9 @@ const styles = StyleSheet.create({
   },
   postButton: {
     backgroundColor: "#ff4040",
-    paddingHorizontal: 15,
+    paddingHorizontal: 35,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 20,
     alignSelf: "flex-end",
   },
   videoWrapper: {
