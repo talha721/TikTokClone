@@ -23,6 +23,7 @@ export type PostInput = {
   video_url: string;
   description: string;
   user_id: string;
+  thumbnail_url?: string;
 };
 
 export type Comment = {

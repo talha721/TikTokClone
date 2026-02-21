@@ -54,6 +54,21 @@ export const uploadVideoToStorage = async (storageProps: StorageInput) => {
   return urlData.publicUrl;
 };
 
+export const uploadImageToStorage = async (storageProps: StorageInput) => {
+  const { fileName, fileExtension, fileBuffer } = storageProps;
+
+  const { data, error } = await supabase.storage.from("thumbnails").upload(fileName, fileBuffer, {
+    contentType: `image/${fileExtension}`,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data: urlData } = supabase.storage.from("thumbnails").getPublicUrl(fileName);
+  return urlData.publicUrl;
+};
+
 export const createPost = async (postData: PostInput) => {
   const { data, error } = await supabase.from("posts").insert(postData).throwOnError();
 

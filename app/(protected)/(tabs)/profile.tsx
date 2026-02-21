@@ -54,7 +54,7 @@ const Profile: FC = () => {
     ]);
   };
 
-  const renderPost = ({ item }: { item: { id: string; thumbnail?: string; video_url?: string } }) => (
+  const renderPost = ({ item }: { item: { id: string; thumbnail_url?: string; video_url?: string } }) => (
     <Pressable
       onPress={() => {
         // if (item.videoUri) {
@@ -63,7 +63,7 @@ const Profile: FC = () => {
         // }
       }}
     >
-      <Image source={{ uri: item.thumbnail || item.video_url }} style={styles.postImage} />
+      <Image source={{ uri: item.thumbnail_url || item.video_url }} style={styles.postImage} />
     </Pressable>
   );
 

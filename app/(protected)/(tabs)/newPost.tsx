@@ -1,58 +1,27 @@
-import { createPost, uploadVideoToStorage } from "@/services/posts";
-import { useAuthStore } from "@/stores/useAuthStore";
+import { useNewPostStore } from "@/stores/useNewPostStore";
 import { Ionicons } from "@expo/vector-icons";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
-import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Button, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const NewPost = () => {
   const [facing, setFacing] = useState<CameraType>("back");
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [video, setVideo] = useState<string>("");
-  const [description, setDescription] = useState<string>("");
 
-  const user = useAuthStore((state) => state.user);
+  const setVideoUri = useNewPostStore((state) => state.setVideoUri);
 
   const cameraRef = useRef<CameraView>(null);
-  const queryClient = useQueryClient();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
 
   const videoPlayer = useVideoPlayer(null, (player) => {
     player.loop = true;
-  });
-
-  const { mutate: createNewPost, isPending } = useMutation({
-    mutationFn: async ({ video, description }: { video: string; description: string }) => {
-      const fileExtension = video.split(".").pop() || "mp4";
-      const fileName = `${user?.id}/${Date.now()}.${fileExtension}`;
-
-      const file = new FileSystem.File(video);
-      const fileBuffer = await file.bytes();
-
-      if (user) {
-        const videoUrl = await uploadVideoToStorage({ fileName, fileExtension, fileBuffer });
-        await createPost({ video_url: videoUrl, description, user_id: user?.id });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["posts"] });
-      videoPlayer.release();
-      setDescription("");
-      setVideo("");
-      router.replace("/");
-    },
-    onError: (error) => {
-      console.log("Error creating post:", error.message);
-      Alert.alert("Error creating post:", error.message);
-    },
   });
 
   useEffect(() => {
@@ -107,12 +76,13 @@ const NewPost = () => {
     videoPlayer.release();
   };
 
-  const postVideo = () => {
+  const handleNext = () => {
     if (!video) {
-      Alert.alert("No video to post");
+      Alert.alert("No video selected");
       return;
     }
-    createNewPost({ video, description });
+    setVideoUri(video);
+    router.push("/(protected)/postDetails");
   };
 
   const startRecording = async () => {
@@ -158,13 +128,13 @@ const NewPost = () => {
           <VideoView player={videoPlayer} contentFit="cover" style={styles.video} />
         </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.descriptionContainer} keyboardVerticalOffset={20}>
-          {/* <TextInput placeholder="Write a caption..." style={styles.input} multiline value={description} onChangeText={setDescription} /> */}
+        {/* <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.descriptionContainer} keyboardVerticalOffset={20}> */}
+        {/* <TextInput placeholder="Write a caption..." style={styles.input} multiline value={description} onChangeText={setDescription} /> */}
 
-          <TouchableOpacity style={styles.postButton} onPress={postVideo}>
-            <Text style={styles.postText}>Next</Text>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
+        <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+          <Text style={styles.nextText}>Next</Text>
+        </TouchableOpacity>
+        {/* </KeyboardAvoidingView> */}
       </View>
     );
   };
@@ -226,7 +196,7 @@ const styles = StyleSheet.create({
   },
   closeIcon: {
     position: "absolute",
-    top: 50,
+    top: 70,
     left: 10,
     zIndex: 1,
   },
@@ -242,20 +212,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     maxHeight: 100,
   },
-  postText: {
+  nextButton: {
+    backgroundColor: "#ff4040",
+    shadowColor: "#ff4040",
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.5,
+    paddingHorizontal: 75,
+    paddingVertical: 10,
+    marginBottom: 20,
+    marginRight: 10,
+    borderRadius: 20,
+    alignSelf: "flex-end",
+  },
+  nextText: {
     color: "white",
     fontWeight: "700",
     fontSize: 17,
   },
-  postButton: {
-    backgroundColor: "#ff4040",
-    paddingHorizontal: 35,
-    paddingVertical: 10,
-    borderRadius: 20,
-    alignSelf: "flex-end",
-  },
   videoWrapper: {
     flex: 1,
+    marginTop: 50,
   },
   descriptionContainer: {
     paddingHorizontal: 5,
