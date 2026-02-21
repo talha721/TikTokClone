@@ -1,41 +1,39 @@
 import { fetchPosts } from "@/services/posts";
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import React, { FC, useMemo, useState } from "react";
 import { Alert, Dimensions, FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ThemedText } from "../../../components/themed-text";
-import { ThemedView } from "../../../components/themed-view";
 import { useAuthStore } from "../../../stores/useAuthStore";
 
 const windowWidth = Dimensions.get("window").width;
+const GRID_GAP = 2;
+const ITEM_SIZE = (windowWidth - GRID_GAP * 2) / 3;
+
+const TABS = [
+  { key: "videos", icon: (active: boolean) => <MaterialCommunityIcons name="tune-variant" size={22} color={active ? "#fff" : "#888"} /> },
+  { key: "private", icon: (active: boolean) => <Ionicons name="lock-closed" size={20} color={active ? "#fff" : "#888"} /> },
+  { key: "reposts", icon: (active: boolean) => <MaterialCommunityIcons name="repeat" size={22} color={active ? "#fff" : "#888"} /> },
+  { key: "saved", icon: (active: boolean) => <Ionicons name="bookmark-outline" size={20} color={active ? "#fff" : "#888"} /> },
+  { key: "liked", icon: (active: boolean) => <Ionicons name="heart-outline" size={20} color={active ? "#fff" : "#888"} /> },
+];
 
 const Profile: FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const [activeTab, setActiveTab] = useState("videos");
 
-  const [following, setFollowing] = useState<boolean>(false);
-  // const [modalVisible, setModalVisible] = useState(false);
-  // const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
-  // const videoRef = useRef<any>(null);
-
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage, refetch } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ["posts"],
     queryFn: ({ pageParam }) => fetchPosts(pageParam, user?.id as string),
-    initialPageParam: { limit: 3, cursor: undefined },
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length === 0) {
-        return undefined;
-      }
-
-      return {
-        limit: 1,
-        cursor: lastPage[lastPage.length - 1].id,
-      };
+    initialPageParam: { limit: 12, cursor: undefined },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.length === 0) return undefined;
+      return { limit: 12, cursor: lastPage[lastPage.length - 1].id };
     },
   });
 
   const posts = useMemo(() => data?.pages.flat() || [], [data]);
-  console.log("🚀 ~ Profile ~ posts:", posts);
 
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -54,255 +52,323 @@ const Profile: FC = () => {
     ]);
   };
 
-  const renderPost = ({ item }: { item: { id: string; thumbnail_url?: string; video_url?: string } }) => (
-    <Pressable
-      onPress={() => {
-        // if (item.videoUri) {
-        //   setSelectedVideo(item.videoUri);
-        //   setModalVisible(true);
-        // }
-      }}
-    >
-      <Image source={{ uri: item.thumbnail_url || item.video_url }} style={styles.postImage} />
+  const renderPost = ({ item, index }: { item: { id: string; thumbnail_url?: string; video_url?: string; likesCount?: number }; index: number }) => (
+    <Pressable style={styles.postItem}>
+      <Image source={{ uri: item.thumbnail_url || item.video_url }} style={styles.postImage} resizeMode="cover" />
+      {/* {index === 0 && (
+        <View style={styles.draftBadge}>
+          <Text style={styles.draftText}>Drafts: 2</Text>
+        </View>
+      )} */}
+      <View style={styles.postOverlay}>
+        <Ionicons name="play" size={10} color="#fff" />
+        <Text style={styles.playCount}>{item.likesCount ?? 0}</Text>
+      </View>
     </Pressable>
   );
 
-  return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <ThemedView style={styles.container}>
-        <View style={styles.topRow}>
-          <ThemedText style={styles.title} type="title">
-            Profile
-          </ThemedText>
-          <Pressable onPress={handleLogout} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Logout</Text>
+  const ListHeader = () => (
+    <View>
+      {/* Top Nav */}
+      <View style={styles.topNav}>
+        <Pressable style={styles.navIcon}>
+          <Ionicons name="person-add-outline" size={24} color="#fff" />
+        </Pressable>
+        {/* <Pressable style={styles.profileViewsPill}>
+          <Text style={styles.profileViewsText}>3 profile views</Text>
+        </Pressable> */}
+        <View style={styles.navRight}>
+          <Pressable style={styles.navIcon}>
+            <Ionicons name="arrow-redo-outline" size={24} color="#fff" />
+          </Pressable>
+          <Pressable
+            style={styles.navIcon}
+            // onPress={handleLogout}
+          >
+            <Ionicons name="menu" size={26} color="#fff" />
           </Pressable>
         </View>
+      </View>
 
-        <View style={styles.header}>
-          <View style={styles.avatarPlaceholder}>
-            <ThemedText style={styles.avatarLetter} type="title">
-              {(user?.username?.[0] ?? "U").toUpperCase()}
-            </ThemedText>
-          </View>
-          <View style={styles.headerInfo}>
-            <View style={styles.rowBetween}>
-              <ThemedText style={styles.username} type="defaultSemiBold">
-                {user?.username ?? "Cat Lover"}
-              </ThemedText>
-              <Pressable
-                onPress={() => setFollowing((s) => !s)}
-                style={({ pressed }) => [styles.followButton, following ? styles.following : null, pressed ? { opacity: 0.8 } : null]}
-              >
-                <Text style={[styles.followText, following ? { color: "#111" } : null]}>{following ? "Following" : "Follow"}</Text>
-              </Pressable>
-            </View>
-
-            {/* <Text style={styles.bio} numberOfLines={2}>
-              {user?.username ? `Hey, I'm ${user.username}. Sharing fun short videos.` : "Passionate about cats and short videos."}
-            </Text> */}
-
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>{posts.length}</ThemedText>
-                <Text style={styles.statLabel}>Posts</Text>
-              </View>
-              <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>0</ThemedText>
-                <Text style={styles.statLabel}>Followers</Text>
-              </View>
-              <View style={styles.statItem}>
-                <ThemedText style={styles.statNumber}>0 </ThemedText>
-                <Text style={styles.statLabel}>Following</Text>
-              </View>
-            </View>
-          </View>
+      {/* Avatar */}
+      <View style={styles.avatarWrapper}>
+        <View style={styles.avatarCircle}>
+          <Text style={styles.avatarLetter}>{(user?.username?.[0] ?? "U").toUpperCase()}</Text>
         </View>
+        <Pressable style={styles.addAvatarBtn}>
+          <Ionicons name="add" size={16} color="#fff" />
+        </Pressable>
+      </View>
 
-        <View style={styles.divider} />
+      {/* Username + Edit */}
+      <View style={styles.usernameRow}>
+        <Text style={styles.username}>{user?.username ?? "Username"}</Text>
+        <MaterialIcons name="keyboard-arrow-down" size={20} color="#fff" />
+        <Pressable style={styles.editButton}>
+          <Text style={styles.editText}>Edit</Text>
+        </Pressable>
+      </View>
 
-        <FlatList
-          data={posts}
-          keyExtractor={(i) => i.id}
-          renderItem={renderPost}
-          numColumns={3}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.postsList}
-        />
-        {/* <Modal
-          visible={modalVisible}
-          animationType="slide"
-          onRequestClose={() => {
-            setModalVisible(false);
-            setSelectedVideo(null);
-          }}
-        >
-          <View style={styles.modalContainer}>
-            <Pressable
-              style={styles.closeButton}
-              onPress={() => {
-                setModalVisible(false);
-                setSelectedVideo(null);
-              }}
-            >
-              <Text style={styles.closeText}>Close</Text>
-            </Pressable>
-            {selectedVideo ? (
-              VideoComp ? (
-                <VideoComp ref={videoRef} source={{ uri: selectedVideo }} style={styles.modalVideo} useNativeControls resizeMode="contain" shouldPlay />
-              ) : (
-                <Text style={styles.fallbackText}>Video component not available. Install expo-video (recommended) or expo-av.</Text>
-              )
-            ) : null}
-          </View>
-        </Modal> */}
-      </ThemedView>
+      {/* Handle */}
+      <Text style={styles.handle}>@{user?.username?.toLowerCase() ?? "username"}</Text>
+
+      {/* Stats */}
+      <View style={styles.statsRow}>
+        <Pressable style={styles.statItem}>
+          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statLabel}>Following</Text>
+        </Pressable>
+        <View style={styles.statDivider} />
+        <Pressable style={styles.statItem}>
+          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statLabel}>Followers</Text>
+        </Pressable>
+        <View style={styles.statDivider} />
+        <Pressable style={styles.statItem}>
+          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statLabel}>Likes</Text>
+        </Pressable>
+      </View>
+
+      {/* Bio */}
+      {/* <Text style={styles.bio}>Dil ma basa ka Dil Tor diya</Text> */}
+
+      {/* Content Tabs */}
+      <View style={styles.tabsRow}>
+        {TABS.map((tab) => (
+          <Pressable key={tab.key} style={styles.tabItem} onPress={() => setActiveTab(tab.key)}>
+            {tab.icon(activeTab === tab.key)}
+            {activeTab === tab.key && <View style={styles.tabUnderline} />}
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top"]}>
+      <FlatList
+        data={posts}
+        keyExtractor={(i) => i.id}
+        renderItem={renderPost}
+        numColumns={3}
+        ListHeaderComponent={ListHeader}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        onEndReached={() => hasNextPage && !isFetchingNextPage && fetchNextPage()}
+        onEndReachedThreshold={0.5}
+        columnWrapperStyle={styles.columnWrapper}
+      />
     </SafeAreaView>
   );
 };
 
 export default Profile;
 
-const avatarSize = 96;
-const gap = 6;
-
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    padding: 16,
+    backgroundColor: "#000",
   },
-  topRow: {
+  listContent: {
+    paddingBottom: 90,
+  },
+  columnWrapper: {
+    gap: GRID_GAP,
+  },
+
+  // Top Nav
+  topNav: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  title: {
-    fontSize: 20,
+  navIcon: {
+    padding: 4,
   },
-  logoutButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#eee",
-  },
-  logoutText: {
-    color: "#111",
-    fontWeight: "600",
-  },
-  header: {
+  navRight: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    gap: 4,
+  },
+  profileViewsPill: {
+    backgroundColor: "#1a1a1a",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  profileViewsText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+
+  // Avatar
+  avatarWrapper: {
+    alignItems: "center",
+    marginTop: 8,
     marginBottom: 12,
   },
-  avatar: {
-    width: avatarSize,
-    height: avatarSize,
-    borderRadius: avatarSize / 2,
-    marginRight: 12,
-    backgroundColor: "#ddd",
-  },
-  avatarPlaceholder: {
-    width: avatarSize,
-    height: avatarSize,
-    borderRadius: avatarSize / 2,
-    marginRight: 12,
-    backgroundColor: "#888",
+  avatarCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: "#555",
     alignItems: "center",
     justifyContent: "center",
   },
   avatarLetter: {
     color: "#fff",
+    fontSize: 38,
     fontWeight: "700",
-    fontSize: 36,
   },
-  headerInfo: {
-    flex: 1,
+  addAvatarBtn: {
+    position: "absolute",
+    bottom: 0,
+    right: windowWidth / 2 - 48 - 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#fe2c55",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#000",
+  },
+
+  // Username row
+  usernameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginBottom: 4,
   },
   username: {
-    fontSize: 18,
-    marginRight: 12,
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
   },
-  rowBetween: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  editButton: {
+    marginLeft: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#444",
   },
-  followButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    backgroundColor: "#ff2d55",
-  },
-  following: {
-    backgroundColor: "#e5e5ea",
-  },
-  followText: {
-    color: "white",
+  editText: {
+    color: "#fff",
+    fontSize: 14,
     fontWeight: "600",
   },
-  bio: {
-    marginTop: 8,
-    color: "#666",
+  handle: {
+    color: "#aaa",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 16,
   },
+
+  // Stats
   statsRow: {
-    marginTop: 12,
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    marginBottom: 12,
+    gap: 0,
   },
   statItem: {
-    marginRight: 20,
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#333",
   },
   statNumber: {
+    color: "#fff",
+    fontSize: 18,
     fontWeight: "700",
   },
   statLabel: {
-    color: "#666",
+    color: "#aaa",
     fontSize: 12,
+    marginTop: 2,
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 12,
+
+  // Bio
+  bio: {
+    color: "#fff",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 16,
+    paddingHorizontal: 24,
   },
-  postsList: {
-    paddingBottom: 80,
+
+  // Tabs
+  tabsRow: {
+    flexDirection: "row",
+    borderTopWidth: 0.5,
+    borderTopColor: "#222",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#222",
+    marginBottom: GRID_GAP,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    position: "relative",
+  },
+  tabUnderline: {
+    position: "absolute",
+    bottom: 0,
+    left: "15%",
+    right: "15%",
+    height: 2,
+    backgroundColor: "#fff",
+    borderRadius: 1,
+  },
+
+  // Grid
+  postItem: {
+    width: ITEM_SIZE,
+    height: ITEM_SIZE * 1.4,
+    backgroundColor: "#1a1a1a",
+    marginBottom: GRID_GAP,
   },
   postImage: {
-    width: (windowWidth - 16 * 2 - gap * 2) / 3,
-    height: (windowWidth - 16 * 2 - gap * 2) / 3,
-    marginBottom: gap,
-    marginRight: gap,
-    backgroundColor: "#ccc",
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalVideo: {
     width: "100%",
-    height: "70%",
-    backgroundColor: "#000",
+    height: "100%",
   },
-  closeButton: {
+  draftBadge: {
     position: "absolute",
-    top: 40,
-    right: 20,
-    zIndex: 10,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 3,
   },
-  closeText: {
+  draftText: {
     color: "#fff",
+    fontSize: 11,
     fontWeight: "600",
   },
-  fallbackText: {
+  postOverlay: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  playCount: {
     color: "#fff",
-    paddingHorizontal: 20,
-    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
