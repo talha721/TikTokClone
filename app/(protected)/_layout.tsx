@@ -13,6 +13,7 @@ const ProtectedLayout: FC = () => {
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="postDetails" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="chat/[conversationId]" options={{ headerShown: false, animation: "slide_from_right" }} />
     </Stack>
   );
 };

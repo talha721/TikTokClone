@@ -42,3 +42,22 @@ export type NewCommentInput = {
   user_id: string;
   comment: string;
 };
+
+export type Conversation = {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  last_message?: string;
+  last_message_at: string;
+  created_at: string;
+  otherUser?: User;
+};
+
+export type Message = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  read_at?: string;
+};
