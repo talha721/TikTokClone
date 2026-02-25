@@ -10,6 +10,7 @@ type AuthStore = {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateAvatar: (avatarUrl: string) => void;
   // setUser: (user: User | null) => void;
 };
 
@@ -31,6 +32,7 @@ export const useAuthStore = create<AuthStore>()(
               id: user.id,
               email: user.email!,
               username: user.user_metadata.username,
+              avatar_url: user.user_metadata.avatar_url,
             };
             set({
               user: loggedInUser,
@@ -60,6 +62,7 @@ export const useAuthStore = create<AuthStore>()(
               id: user.id,
               email: user.email!,
               username: user.user_metadata.username,
+              avatar_url: user.user_metadata.avatar_url,
             };
 
             set({
@@ -81,7 +84,13 @@ export const useAuthStore = create<AuthStore>()(
           throw error;
         }
       },
+      updateAvatar: (avatarUrl: string) => {
+        const current = get().user;
+        if (current) {
+          set({ user: { ...current, avatar_url: avatarUrl } });
+        }
+      },
     }),
-    { name: "auth-storage", storage: createJSONStorage(() => AsyncStorage) }
-  )
+    { name: "auth-storage", storage: createJSONStorage(() => AsyncStorage) },
+  ),
 );

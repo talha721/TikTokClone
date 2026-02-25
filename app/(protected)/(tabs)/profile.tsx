@@ -1,7 +1,10 @@
 import { useTheme } from "@/hooks/use-theme";
+import { supabase } from "@/lib/supabase";
 import { fetchPosts } from "@/services/posts";
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import * as FileSystem from "expo-file-system";
+import * as ImagePicker from "expo-image-picker";
 import React, { FC, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Dimensions, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableWithoutFeedback, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -33,9 +36,11 @@ function TabIcon({ tabKey, active, activeColor, inactiveColor }: { tabKey: TabKe
 const Profile: FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
+  const updateAvatar = useAuthStore((s) => s.updateAvatar);
   const { isDark, colors, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("videos");
   const [menuVisible, setMenuVisible] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const DRAWER_WIDTH = windowWidth * 0.72;
   const slideAnim = useRef(new Animated.Value(DRAWER_WIDTH)).current;
@@ -47,6 +52,50 @@ const Profile: FC = () => {
       Animated.timing(slideAnim, { toValue: 0, duration: 280, useNativeDriver: true }),
       Animated.timing(backdropOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
     ]).start();
+  };
+
+  const pickAndUploadAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission required", "Please allow access to your photo library.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    const ext = asset.uri.split(".").pop() ?? "jpg";
+    const fileName = `${user!.id}/avatar.${ext}`;
+
+    setUploading(true);
+    try {
+      const file = new FileSystem.File(asset.uri);
+      const byteArray = await file.bytes();
+
+      const { error: uploadError } = await supabase.storage.from("profile_pictures").upload(fileName, byteArray, {
+        contentType: asset.mimeType ?? "image/jpeg",
+        upsert: true,
+      });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from("profile_pictures").getPublicUrl(fileName);
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      await supabase.auth.updateUser({ data: { avatar_url: publicUrl } });
+      updateAvatar(publicUrl);
+    } catch (e: any) {
+      Alert.alert("Upload failed", e.message ?? "Something went wrong.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const closeMenu = () => {
@@ -126,10 +175,18 @@ const Profile: FC = () => {
       {/* Avatar */}
       <View style={styles.avatarWrapper}>
         <View style={styles.avatarCircle}>
-          <Text style={styles.avatarLetter}>{(user?.username?.[0] ?? "U").toUpperCase()}</Text>
+          {user?.avatar_url ? (
+            <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarLetter}>{(user?.username?.[0] ?? "U").toUpperCase()}</Text>
+          )}
         </View>
-        <Pressable style={[styles.addAvatarBtn, { borderColor: colors.background }]}>
-          <Ionicons name="add" size={16} color="#fff" />
+        <Pressable
+          style={[styles.addAvatarBtn, { borderColor: colors.background, opacity: uploading ? 0.5 : 1 }]}
+          onPress={pickAndUploadAvatar}
+          disabled={uploading}
+        >
+          <Ionicons name={uploading ? "hourglass-outline" : "add"} size={16} color="#fff" />
         </Pressable>
       </View>
 
@@ -298,6 +355,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 38,
     fontWeight: "700",
+  },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   addAvatarBtn: {
     position: "absolute",
