@@ -99,7 +99,7 @@ export default function ChatScreen() {
     // Subscribe to ALL inserts in this conversation (both sides)
     const unsubscribe = subscribeToMessages(conversationId, (newMsg) => {
       setMessages((prev) => {
-        if (prev.some((m) => m.id != null && m.id === newMsg.id)) return prev;
+        if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
         const withoutTemp = prev.filter((m) => !(String(m.id ?? "").startsWith("temp-") && m.sender_id === newMsg.sender_id && m.content === newMsg.content));
         return [...withoutTemp, newMsg];
       });
@@ -135,7 +135,8 @@ export default function ChatScreen() {
           .order("created_at", { ascending: true });
         if (data && data.length > 0) {
           setMessages((prev) => {
-            const fresh = (data as Message[]).filter((m) => !prev.some((p) => p.id === m.id));
+            const existingIds = new Set(prev.map((m) => m.id));
+            const fresh = (data as Message[]).filter((m) => m.id && !existingIds.has(m.id));
             if (fresh.length === 0) return prev;
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
             return [...prev, ...fresh];
@@ -144,11 +145,18 @@ export default function ChatScreen() {
       } catch (_) {}
     }, 3000);
 
-    // Also re-fetch when app returns to foreground
+    // Also re-fetch when app returns to foreground — merge, don't replace
     const appStateSub = AppState.addEventListener("change", (state) => {
       if (state === "active")
         fetchMessages(conversationId)
-          .then((msgs) => setMessages(msgs))
+          .then((msgs) => {
+            setMessages((prev) => {
+              const existingIds = new Set(prev.map((m) => m.id));
+              const fresh = msgs.filter((m) => !existingIds.has(m.id));
+              if (fresh.length === 0) return prev;
+              return [...prev, ...fresh].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            });
+          })
           .catch(() => {});
     });
 
@@ -272,7 +280,7 @@ export default function ChatScreen() {
             <FlatList
               ref={flatListRef}
               data={messages}
-              keyExtractor={(item) => String(item.id ?? item.created_at)}
+              keyExtractor={(item, index) => String(item.id ?? `${item.created_at}-${index}`)}
               renderItem={renderMessage}
               contentContainerStyle={styles.messagesList}
               showsVerticalScrollIndicator={false}
