@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true
     },
+    "softwareKeyboardLayoutMode": "adjustResize",
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -20,12 +21,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ],
+      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO", "android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
       "package": "com.talhamoazzam.tiktokClone"
     },
     "web": {

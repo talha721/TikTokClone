@@ -1,5 +1,6 @@
 import { useTheme } from "@/hooks/use-theme";
-import { fetchMessages, markMessagesRead, sendMessage, subscribeToMessages } from "@/services/messages";
+import { supabase } from "@/lib/supabase";
+import { fetchMessages, markMessagesRead, sendMessage, subscribeToMessages, subscribeToTyping } from "@/services/messages";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Message } from "@/types/types";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -7,6 +8,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -18,23 +21,68 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ChatScreen() {
-  const { conversationId, username, avatar } = useLocalSearchParams<{
+  const params = useLocalSearchParams<{
     conversationId: string;
     username: string;
     avatar?: string;
   }>();
+  const conversationId = Array.isArray(params.conversationId) ? params.conversationId[0] : params.conversationId;
+  const username = Array.isArray(params.username) ? params.username[0] : params.username;
+  const avatar = Array.isArray(params.avatar) ? params.avatar[0] : params.avatar;
   const { colors, isDark } = useTheme();
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [otherTyping, setOtherTyping] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const messagesRef = useRef<Message[]>([]);
+  const typingHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendTypingRef = useRef<(() => void) | null>(null);
+  const lastTypingBroadcast = useRef(0);
+  // Animated dots for typing indicator
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!otherTyping) return;
+    const anim = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, { toValue: -5, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.delay(600),
+        ]),
+      );
+    const a1 = anim(dot1, 0);
+    const a2 = anim(dot2, 150);
+    const a3 = anim(dot3, 300);
+    a1.start();
+    a2.start();
+    a3.start();
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    };
+  }, [otherTyping]);
+
+  // Keep ref in sync so realtime callback never has a stale closure
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     if (!conversationId || !user) return;
@@ -44,25 +92,72 @@ export default function ChatScreen() {
       .then((msgs) => {
         setMessages(msgs);
         setLoading(false);
-        // Mark received messages as read
         markMessagesRead(conversationId, user.id);
       })
       .catch(() => setLoading(false));
 
-    // Subscribe to real-time new messages from the other user
+    // Subscribe to ALL inserts in this conversation (both sides)
     const unsubscribe = subscribeToMessages(conversationId, (newMsg) => {
       setMessages((prev) => {
-        // Avoid duplicates (our own sent messages are added optimistically)
-        if (prev.some((m) => m.id === newMsg.id)) return prev;
-        return [...prev, newMsg];
+        if (prev.some((m) => m.id != null && m.id === newMsg.id)) return prev;
+        const withoutTemp = prev.filter((m) => !(String(m.id ?? "").startsWith("temp-") && m.sender_id === newMsg.sender_id && m.content === newMsg.content));
+        return [...withoutTemp, newMsg];
       });
       if (newMsg.sender_id !== user.id) {
+        // Clear typing indicator when a real message arrives
+        setOtherTyping(false);
         markMessagesRead(conversationId, user.id);
       }
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
     });
 
-    return unsubscribe;
+    // Subscribe to typing indicator
+    const { sendTyping, unsubscribe: unsubTyping } = subscribeToTyping(conversationId, user.id, () => {
+      setOtherTyping(true);
+      // Auto-hide after 3 s of no new typing events
+      if (typingHideTimer.current) clearTimeout(typingHideTimer.current);
+      typingHideTimer.current = setTimeout(() => setOtherTyping(false), 3000);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+    });
+    sendTypingRef.current = sendTyping;
+
+    // Polling fallback — fires every 3 s to catch any missed realtime events
+    const pollInterval = setInterval(async () => {
+      const last = messagesRef.current[messagesRef.current.length - 1];
+      // Only poll for messages newer than what we have
+      const since = last?.created_at ?? new Date(0).toISOString();
+      try {
+        const { data } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .gt("created_at", since)
+          .order("created_at", { ascending: true });
+        if (data && data.length > 0) {
+          setMessages((prev) => {
+            const fresh = (data as Message[]).filter((m) => !prev.some((p) => p.id === m.id));
+            if (fresh.length === 0) return prev;
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+            return [...prev, ...fresh];
+          });
+        }
+      } catch (_) {}
+    }, 3000);
+
+    // Also re-fetch when app returns to foreground
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active")
+        fetchMessages(conversationId)
+          .then((msgs) => setMessages(msgs))
+          .catch(() => {});
+    });
+
+    return () => {
+      unsubscribe();
+      unsubTyping();
+      clearInterval(pollInterval);
+      appStateSub.remove();
+    };
   }, [conversationId, user]);
 
   const handleSend = async () => {
@@ -86,7 +181,8 @@ export default function ChatScreen() {
       const sent = await sendMessage(conversationId, user.id, content);
       // Replace temp message with real one
       setMessages((prev) => prev.map((m) => (m.id === tempMsg.id ? sent : m)));
-    } catch {
+    } catch (err) {
+      console.error("Failed to send message:", err);
       // Remove temp message on failure
       setMessages((prev) => prev.filter((m) => m.id !== tempMsg.id));
       setInput(content);
@@ -99,7 +195,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isMe = item.sender_id === user?.id;
-    const isTemp = item.id.startsWith("temp-");
+    const isTemp = String(item.id ?? "").startsWith("temp-");
     const prevMsg = messages[index - 1];
     const showTimestamp = !prevMsg || new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 5 * 60 * 1000;
 
@@ -132,90 +228,114 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : insets.top}
+      >
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.icon + "33" }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
 
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.icon + "33" }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
+          {avatar ? (
+            <Image source={{ uri: avatar }} style={styles.headerAvatar} />
+          ) : (
+            <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.icon + "44" }]}>
+              <Ionicons name="person" size={20} color={colors.icon} />
+            </View>
+          )}
 
-        {avatar ? (
-          <Image source={{ uri: avatar }} style={styles.headerAvatar} />
-        ) : (
-          <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.icon + "44" }]}>
-            <Ionicons name="person" size={20} color={colors.icon} />
+          <View style={styles.headerInfo}>
+            <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
+              {username}
+            </Text>
+            <Text style={[styles.headerSub, { color: colors.icon }]}>tap to view profile</Text>
           </View>
-        )}
 
-        <View style={styles.headerInfo}>
-          <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
-            {username}
-          </Text>
-          <Text style={[styles.headerSub, { color: colors.icon }]}>tap to view profile</Text>
+          <TouchableOpacity>
+            <Feather name="video" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={{ marginLeft: 14 }}>
+            <Feather name="phone" size={22} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity>
-          <Feather name="video" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity style={{ marginLeft: 14 }}>
-          <Feather name="phone" size={22} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Messages */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}>
-        {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color="#fe2c55" />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            renderItem={renderMessage}
-            contentContainerStyle={styles.messagesList}
-            showsVerticalScrollIndicator={false}
-            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-            ListEmptyComponent={
-              <View style={styles.center}>
-                <Text style={[styles.emptyText, { color: colors.icon }]}>No messages yet. Say hi! 👋</Text>
-              </View>
-            }
-          />
-        )}
-
-        {/* Input bar */}
-        <View style={[styles.inputBar, { borderTopColor: colors.icon + "33", backgroundColor: colors.background }]}>
-          <TouchableOpacity>
-            <Feather name="camera" size={24} color={colors.icon} />
-          </TouchableOpacity>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: isDark ? "#2a2a2a" : "#f5f5f5",
-                color: colors.text,
-              },
-            ]}
-            placeholder="Message..."
-            placeholderTextColor={colors.icon}
-            value={input}
-            onChangeText={setInput}
-            multiline
-            maxLength={500}
-            returnKeyType="send"
-            onSubmitEditing={handleSend}
-          />
-          {input.trim() ? (
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-              <Ionicons name="send" size={18} color="#fff" />
-            </TouchableOpacity>
+        {/* Messages */}
+        <View style={{ flex: 1 }}>
+          {loading ? (
+            <View style={styles.center}>
+              <ActivityIndicator color="#fe2c55" />
+            </View>
           ) : (
-            <TouchableOpacity>
-              <Feather name="image" size={24} color={colors.icon} />
-            </TouchableOpacity>
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={(item) => String(item.id ?? item.created_at)}
+              renderItem={renderMessage}
+              contentContainerStyle={styles.messagesList}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={[styles.emptyText, { color: colors.icon }]}>No messages yet. Say hi! 👋</Text>
+                </View>
+              }
+            />
           )}
+
+          {/* Typing indicator */}
+          {otherTyping && (
+            <View style={styles.typingRow}>
+              <View style={[styles.typingBubble, { backgroundColor: isDark ? "#2a2a2a" : "#f0f0f0" }]}>
+                <Animated.View style={[styles.typingDot, { backgroundColor: colors.icon, transform: [{ translateY: dot1 }] }]} />
+                <Animated.View style={[styles.typingDot, { backgroundColor: colors.icon, transform: [{ translateY: dot2 }] }]} />
+                <Animated.View style={[styles.typingDot, { backgroundColor: colors.icon, transform: [{ translateY: dot3 }] }]} />
+              </View>
+            </View>
+          )}
+
+          {/* Input bar */}
+          <View style={[styles.inputBar, { borderTopColor: colors.icon + "33", backgroundColor: colors.background }]}>
+            <TouchableOpacity>
+              <Feather name="camera" size={24} color={colors.icon} />
+            </TouchableOpacity>
+            <TextInput
+              style={[
+                styles.input,
+                {
+                  backgroundColor: isDark ? "#2a2a2a" : "#f5f5f5",
+                  color: colors.text,
+                },
+              ]}
+              placeholder="Message..."
+              placeholderTextColor={colors.icon}
+              value={input}
+              onChangeText={(text) => {
+                setInput(text);
+                // Broadcast typing at most once per 2 s
+                const now = Date.now();
+                if (text.length > 0 && now - lastTypingBroadcast.current > 2000) {
+                  lastTypingBroadcast.current = now;
+                  sendTypingRef.current?.();
+                }
+              }}
+              multiline
+              maxLength={500}
+              returnKeyType="send"
+              onSubmitEditing={handleSend}
+            />
+            {input.trim() ? (
+              <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+                <Ionicons name="send" size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity>
+                <Feather name="image" size={24} color={colors.icon} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -279,5 +399,24 @@ const styles = StyleSheet.create({
     backgroundColor: "#fe2c55",
     alignItems: "center",
     justifyContent: "center",
+  },
+  typingRow: {
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+    alignItems: "flex-start",
+  },
+  typingBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  typingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
 });
