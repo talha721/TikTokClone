@@ -1,5 +1,12 @@
 import { useTheme } from "@/hooks/use-theme";
-import { deleteConversation, fetchConversations, getOrCreateConversation, searchUsers, subscribeToConversations } from "@/services/messages";
+import {
+  deleteConversation,
+  fetchConversations,
+  getOrCreateConversation,
+  searchUsers,
+  subscribeToConversations,
+  subscribeToInboxMessages,
+} from "@/services/messages";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Conversation } from "@/types/types";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -138,6 +145,7 @@ const Inbox = () => {
     try {
       const data = await fetchConversations(user.id);
       setConversations(data);
+      return data;
     } catch (err) {
       console.error("Failed to load conversations", err);
     }
@@ -145,14 +153,34 @@ const Inbox = () => {
 
   useEffect(() => {
     if (!user) return;
-    loadConversations().finally(() => setLoading(false));
 
-    const unsubscribe = subscribeToConversations(user.id, () => {
+    let unsubMsgs: (() => void) | undefined;
+
+    const init = async () => {
+      const data = await loadConversations();
+      setLoading(false);
+      // Subscribe to new messages in all loaded conversations for instant updates
+      if (data && data.length > 0) {
+        unsubMsgs = subscribeToInboxMessages(
+          data.map((c) => c.id),
+          () => loadConversations(),
+        );
+      }
+    };
+    init();
+
+    // Subscribe to changes on the conversations table itself
+    const unsubConvs = subscribeToConversations(user.id, () => {
       loadConversations();
     });
 
+    // Polling fallback every 6 s — catches any missed realtime events
+    const poll = setInterval(() => loadConversations(), 6000);
+
     return () => {
-      unsubscribe();
+      unsubMsgs?.();
+      unsubConvs();
+      clearInterval(poll);
     };
   }, [user, loadConversations]);
 

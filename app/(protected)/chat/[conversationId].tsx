@@ -15,7 +15,7 @@ import { Message } from "@/types/types";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -60,6 +60,18 @@ export default function ChatScreen() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [messageMenuVisible, setMessageMenuVisible] = useState(false);
   const [locallyDeletedIds, setLocallyDeletedIds] = useState<Set<string>>(new Set());
+
+  // ID of the last message I sent that the other user has already read
+  const lastReadMsgId = useMemo(() => {
+    const visible = messages.filter((m) => !locallyDeletedIds.has(String(m.id ?? "")));
+    for (let i = visible.length - 1; i >= 0; i--) {
+      const m = visible[i];
+      if (m.sender_id === user?.id && m.read_at && !String(m.id ?? "").startsWith("temp-")) {
+        return m.id;
+      }
+    }
+    return null;
+  }, [messages, locallyDeletedIds, user?.id]);
   const flatListRef = useRef<FlatList>(null);
   const messagesRef = useRef<Message[]>([]);
   const typingHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,6 +178,23 @@ export default function ChatScreen() {
             setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
             return [...prev, ...fresh];
           });
+        }
+
+        // Also poll for read_at updates on my sent messages (seen indicator)
+        const { data: readData } = await supabase
+          .from("messages")
+          .select("id, read_at")
+          .eq("conversation_id", conversationId)
+          .eq("sender_id", user.id)
+          .not("read_at", "is", null);
+        if (readData && readData.length > 0) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              const upd = (readData as { id: string; read_at: string }[]).find((r) => r.id === m.id);
+              if (upd && upd.read_at && !m.read_at) return { ...m, read_at: upd.read_at };
+              return m;
+            }),
+          );
         }
       } catch (_) {}
     }, 3000);
@@ -331,6 +360,7 @@ export default function ChatScreen() {
     const isMe = item.sender_id === user?.id;
     const isTemp = String(item.id ?? "").startsWith("temp-");
     const isDeleted = item.content === "__DELETED__";
+    const isLastRead = isMe && item.id === lastReadMsgId;
     const prevMsg = messages[index - 1];
     const showTimestamp = !prevMsg || new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 5 * 60 * 1000;
     const isImage = !isDeleted && item.content.startsWith("__IMAGE__:");
@@ -385,6 +415,7 @@ export default function ChatScreen() {
             </View>
           )}
           {!isDeleted && <Text style={[styles.bubbleTime, { color: colors.icon }]}>{formatTime(item.created_at)}</Text>}
+          {isLastRead && <Text style={[styles.seenLabel, { color: colors.icon }]}>Seen {formatTime(item.read_at!)}</Text>}
         </TouchableOpacity>
       </>
     );
@@ -650,6 +681,12 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
+  },
+  seenLabel: {
+    fontSize: 10,
+    marginTop: 1,
+    marginRight: 4,
+    alignSelf: "flex-end",
   },
   deletedBubble: {
     flexDirection: "row",

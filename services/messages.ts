@@ -150,6 +150,21 @@ export const searchUsers = async (query: string, currentUserId: string) => {
   return (data || []) as { id: string; username: string; avatar_url?: string }[];
 };
 
+// Subscribe to any new message in the user's conversations (for inbox live updates)
+export const subscribeToInboxMessages = (conversationIds: string[], onNewMessage: () => void) => {
+  if (conversationIds.length === 0) return () => {};
+  // Supabase realtime only supports single-column eq filters, so we open one
+  // channel per conversation. Cap at 10 to avoid too many channels.
+  const ids = conversationIds.slice(0, 10);
+  const channels = ids.map((convId) =>
+    supabase
+      .channel(`inbox-msg:${convId}:${Date.now()}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` }, () => onNewMessage())
+      .subscribe(),
+  );
+  return () => channels.forEach((ch) => supabase.removeChannel(ch));
+};
+
 export const subscribeToConversations = (userId: string, onUpdate: (payload?: any) => void) => {
   const channel = supabase
     .channel(`conversations:${userId}:${Date.now()}`)
