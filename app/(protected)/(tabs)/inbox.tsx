@@ -1,11 +1,24 @@
 import { useTheme } from "@/hooks/use-theme";
-import { fetchConversations, getOrCreateConversation, searchUsers, subscribeToConversations } from "@/services/messages";
+import { deleteConversation, fetchConversations, getOrCreateConversation, searchUsers, subscribeToConversations } from "@/services/messages";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Conversation } from "@/types/types";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Keyboard, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Keyboard,
+  RefreshControl,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type SearchTab = "chats" | "people";
@@ -13,7 +26,7 @@ type UserResult = { id: string; username: string; avatar_url?: string };
 
 // ─── Conversation Row ─────────────────────────────────────────────────────────
 
-const ConversationRow = ({ item }: { item: Conversation }) => {
+const ConversationRow = ({ item, onLongPress }: { item: Conversation; onLongPress: (conv: Conversation) => void }) => {
   const { colors } = useTheme();
   const other = item.otherUser;
   const unread = (item.unread_count ?? 0) > 0;
@@ -47,7 +60,7 @@ const ConversationRow = ({ item }: { item: Conversation }) => {
   };
 
   return (
-    <TouchableOpacity style={styles.row} onPress={handlePress} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.row} onPress={handlePress} onLongPress={() => onLongPress(item)} delayLongPress={400} activeOpacity={0.7}>
       {(other as any)?.avatar_url ? (
         <Image source={{ uri: (other as any).avatar_url }} style={styles.avatar} />
       ) : (
@@ -199,6 +212,25 @@ const Inbox = () => {
       ? conversations.filter((c) => c.otherUser?.username?.toLowerCase().includes(query.trim().toLowerCase()))
       : conversations;
 
+  // Long-press conversation → delete
+  const handleLongPressConversation = (conv: Conversation) => {
+    Alert.alert("Delete Conversation", `Delete your conversation with ${conv.otherUser?.username ?? "this user"}? This cannot be undone.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteConversation(conv.id);
+            setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+          } catch {
+            Alert.alert("Error", "Could not delete conversation. Please try again.");
+          }
+        },
+      },
+    ]);
+  };
+
   // Navigate to user's chat (create if needed)
   const handleStartChat = async (targetUser: UserResult) => {
     if (!user) return;
@@ -336,7 +368,7 @@ const Inbox = () => {
           data={filteredConversations}
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => <ConversationRow item={item} />}
+          renderItem={({ item }) => <ConversationRow item={item} onLongPress={handleLongPressConversation} />}
           showsVerticalScrollIndicator={false}
           refreshControl={!searchOpen ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fe2c55" colors={["#fe2c55"]} /> : undefined}
           ListEmptyComponent={

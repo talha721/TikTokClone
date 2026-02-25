@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { Conversation, Message } from "@/types/types";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ─── Conversations ────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ export const markMessagesRead = async (conversationId: string, userId: string) =
 
 // ─── Realtime ─────────────────────────────────────────────────────────────────
 
-export const subscribeToMessages = (conversationId: string, onNewMessage: (message: Message) => void) => {
+export const subscribeToMessages = (conversationId: string, onNewMessage: (message: Message) => void, onMessageUpdated?: (message: Message) => void) => {
   // Use a unique channel name per call to prevent cross-client collisions
   const channelName = `messages:${conversationId}:${Date.now()}`;
   const channel = supabase
@@ -118,6 +119,16 @@ export const subscribeToMessages = (conversationId: string, onNewMessage: (messa
         filter: `conversation_id=eq.${conversationId}`,
       },
       (payload) => onNewMessage(payload.new as Message),
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "messages",
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => onMessageUpdated?.(payload.new as Message),
     )
     .subscribe();
 
@@ -165,6 +176,44 @@ export const subscribeToConversations = (userId: string, onUpdate: (payload?: an
     .subscribe();
 
   return () => supabase.removeChannel(channel);
+};
+
+// ─── Delete Messages / Conversations ─────────────────────────────────────────
+
+export const deleteMessageForEveryone = async (messageId: string): Promise<void> => {
+  const { error } = await supabase.from("messages").update({ content: "__DELETED__" }).eq("id", messageId);
+  if (error) throw error;
+};
+
+const LOCAL_DELETE_KEY = (conversationId: string) => `deleted_msgs:${conversationId}`;
+
+export const getLocallyDeletedMessages = async (conversationId: string): Promise<Set<string>> => {
+  try {
+    const json = await AsyncStorage.getItem(LOCAL_DELETE_KEY(conversationId));
+    if (!json) return new Set();
+    return new Set(JSON.parse(json) as string[]);
+  } catch {
+    return new Set();
+  }
+};
+
+export const addLocallyDeletedMessage = async (conversationId: string, messageId: string): Promise<void> => {
+  try {
+    const key = LOCAL_DELETE_KEY(conversationId);
+    const json = await AsyncStorage.getItem(key);
+    const ids: string[] = json ? JSON.parse(json) : [];
+    if (!ids.includes(messageId)) {
+      ids.push(messageId);
+      await AsyncStorage.setItem(key, JSON.stringify(ids));
+    }
+  } catch {}
+};
+
+export const deleteConversation = async (conversationId: string): Promise<void> => {
+  // Delete messages first, then the conversation
+  await supabase.from("messages").delete().eq("conversation_id", conversationId);
+  const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
+  if (error) throw error;
 };
 
 // ─── Typing Indicator (Broadcast) ─────────────────────────────────────────────

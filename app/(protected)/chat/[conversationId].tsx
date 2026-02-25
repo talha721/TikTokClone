@@ -1,6 +1,15 @@
 import { useTheme } from "@/hooks/use-theme";
 import { supabase, supabaseUrl } from "@/lib/supabase";
-import { fetchMessages, markMessagesRead, sendMessage, subscribeToMessages, subscribeToTyping } from "@/services/messages";
+import {
+  addLocallyDeletedMessage,
+  deleteMessageForEveryone,
+  fetchMessages,
+  getLocallyDeletedMessages,
+  markMessagesRead,
+  sendMessage,
+  subscribeToMessages,
+  subscribeToTyping,
+} from "@/services/messages";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Message } from "@/types/types";
 import { Feather, Ionicons } from "@expo/vector-icons";
@@ -15,12 +24,14 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,6 +57,9 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [otherTyping, setOtherTyping] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [messageMenuVisible, setMessageMenuVisible] = useState(false);
+  const [locallyDeletedIds, setLocallyDeletedIds] = useState<Set<string>>(new Set());
   const flatListRef = useRef<FlatList>(null);
   const messagesRef = useRef<Message[]>([]);
   const typingHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,29 +105,36 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!conversationId || !user) return;
 
-    // Load initial messages
-    fetchMessages(conversationId)
-      .then((msgs) => {
+    // Load initial messages & locally deleted IDs
+    Promise.all([fetchMessages(conversationId), getLocallyDeletedMessages(conversationId)])
+      .then(([msgs, deletedIds]) => {
         setMessages(msgs);
+        setLocallyDeletedIds(deletedIds);
         setLoading(false);
         markMessagesRead(conversationId, user.id);
       })
       .catch(() => setLoading(false));
 
-    // Subscribe to ALL inserts in this conversation (both sides)
-    const unsubscribe = subscribeToMessages(conversationId, (newMsg) => {
-      setMessages((prev) => {
-        if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
-        const withoutTemp = prev.filter((m) => !(String(m.id ?? "").startsWith("temp-") && m.sender_id === newMsg.sender_id && m.content === newMsg.content));
-        return [...withoutTemp, newMsg];
-      });
-      if (newMsg.sender_id !== user.id) {
-        // Clear typing indicator when a real message arrives
-        setOtherTyping(false);
-        markMessagesRead(conversationId, user.id);
-      }
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
-    });
+    // Subscribe to ALL inserts & updates in this conversation (both sides)
+    const unsubscribe = subscribeToMessages(
+      conversationId,
+      (newMsg) => {
+        setMessages((prev) => {
+          if (newMsg.id && prev.some((m) => m.id === newMsg.id)) return prev;
+          const withoutTemp = prev.filter((m) => !(String(m.id ?? "").startsWith("temp-") && m.sender_id === newMsg.sender_id && m.content === newMsg.content));
+          return [...withoutTemp, newMsg];
+        });
+        if (newMsg.sender_id !== user.id) {
+          setOtherTyping(false);
+          markMessagesRead(conversationId, user.id);
+        }
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+      },
+      (updatedMsg) => {
+        // Realtime update (e.g. delete for everyone)
+        setMessages((prev) => prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m)));
+      },
+    );
 
     // Subscribe to typing indicator
     const { sendTyping, unsubscribe: unsubTyping } = subscribeToTyping(conversationId, user.id, () => {
@@ -287,13 +308,33 @@ export default function ChatScreen() {
 
   const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  const handleDeleteMessage = async (type: "everyone" | "me") => {
+    setMessageMenuVisible(false);
+    if (!selectedMessage || String(selectedMessage.id ?? "").startsWith("temp-")) return;
+    const msgId = String(selectedMessage.id);
+    if (type === "everyone") {
+      try {
+        await deleteMessageForEveryone(msgId);
+        // Optimistically update local state
+        setMessages((prev) => prev.map((m) => (m.id === selectedMessage.id ? { ...m, content: "__DELETED__" } : m)));
+      } catch {
+        Alert.alert("Error", "Could not delete message. Please try again.");
+      }
+    } else {
+      await addLocallyDeletedMessage(conversationId, msgId);
+      setLocallyDeletedIds((prev) => new Set([...prev, msgId]));
+    }
+    setSelectedMessage(null);
+  };
+
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     const isMe = item.sender_id === user?.id;
     const isTemp = String(item.id ?? "").startsWith("temp-");
+    const isDeleted = item.content === "__DELETED__";
     const prevMsg = messages[index - 1];
     const showTimestamp = !prevMsg || new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 5 * 60 * 1000;
-    const isImage = item.content.startsWith("__IMAGE__:");
-    const isVideo = item.content.startsWith("__VIDEO__:");
+    const isImage = !isDeleted && item.content.startsWith("__IMAGE__:");
+    const isVideo = !isDeleted && item.content.startsWith("__VIDEO__:");
     const mediaUrl = isImage || isVideo ? item.content.replace(/^__(IMAGE|VIDEO)__:/, "") : null;
 
     return (
@@ -307,8 +348,23 @@ export default function ChatScreen() {
             })}
           </Text>
         )}
-        <View style={[styles.bubbleWrapper, isMe ? styles.myBubbleWrapper : styles.theirBubbleWrapper]}>
-          {mediaUrl ? (
+        <TouchableOpacity
+          style={[styles.bubbleWrapper, isMe ? styles.myBubbleWrapper : styles.theirBubbleWrapper]}
+          onLongPress={() => {
+            if (!isTemp && !isDeleted) {
+              setSelectedMessage(item);
+              setMessageMenuVisible(true);
+            }
+          }}
+          delayLongPress={400}
+          activeOpacity={isDeleted ? 1 : 0.7}
+        >
+          {isDeleted ? (
+            <View style={[styles.bubble, styles.deletedBubble, isMe ? { borderColor: "#fe2c5566" } : { borderColor: colors.icon + "44" }]}>
+              <Ionicons name="ban-outline" size={13} color={colors.icon} style={{ marginRight: 4 }} />
+              <Text style={[styles.deletedText, { color: colors.icon }]}>This message was deleted</Text>
+            </View>
+          ) : mediaUrl ? (
             <View style={[styles.mediaBubble, isTemp && { opacity: 0.6 }]}>
               {isImage ? (
                 <Image source={{ uri: mediaUrl }} style={styles.mediaImage} resizeMode="cover" />
@@ -328,8 +384,8 @@ export default function ChatScreen() {
               <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.text }]}>{item.content}</Text>
             </View>
           )}
-          <Text style={[styles.bubbleTime, { color: colors.icon }]}>{formatTime(item.created_at)}</Text>
-        </View>
+          {!isDeleted && <Text style={[styles.bubbleTime, { color: colors.icon }]}>{formatTime(item.created_at)}</Text>}
+        </TouchableOpacity>
       </>
     );
   };
@@ -390,7 +446,7 @@ export default function ChatScreen() {
           ) : (
             <FlatList
               ref={flatListRef}
-              data={messages}
+              data={messages.filter((m) => !locallyDeletedIds.has(String(m.id ?? "")))}
               keyExtractor={(item, index) => String(item.id ?? `${item.created_at}-${index}`)}
               renderItem={renderMessage}
               contentContainerStyle={styles.messagesList}
@@ -462,6 +518,38 @@ export default function ChatScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Message Delete Action Sheet */}
+      <Modal visible={messageMenuVisible} transparent animationType="fade" onRequestClose={() => setMessageMenuVisible(false)}>
+        <TouchableWithoutFeedback onPress={() => setMessageMenuVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.actionSheet, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+                <View style={[styles.actionSheetHandle, { backgroundColor: colors.icon + "44" }]} />
+                <Text style={[styles.actionSheetTitle, { color: colors.icon }]}>Message Options</Text>
+
+                {selectedMessage?.sender_id === user?.id && (
+                  <TouchableOpacity style={styles.actionSheetBtn} onPress={() => handleDeleteMessage("everyone")}>
+                    <Ionicons name="trash" size={20} color="#fe2c55" />
+                    <Text style={[styles.actionSheetBtnText, { color: "#fe2c55" }]}>Delete for everyone</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={styles.actionSheetBtn} onPress={() => handleDeleteMessage("me")}>
+                  <Ionicons name="eye-off-outline" size={20} color={colors.text} />
+                  <Text style={[styles.actionSheetBtnText, { color: colors.text }]}>Delete for me</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.actionSheetDivider, { backgroundColor: colors.icon + "22" }]} />
+
+                <TouchableOpacity style={styles.actionSheetBtn} onPress={() => setMessageMenuVisible(false)}>
+                  <Text style={[styles.actionSheetBtnText, { color: colors.icon, textAlign: "center", width: "100%" }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -562,5 +650,59 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
+  },
+  deletedBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    backgroundColor: "transparent",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  deletedText: {
+    fontSize: 13,
+    fontStyle: "italic",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  actionSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 10,
+    paddingBottom: 34,
+    paddingHorizontal: 16,
+  },
+  actionSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 10,
+  },
+  actionSheetTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  actionSheetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+  },
+  actionSheetBtnText: {
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  actionSheetDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 4,
   },
 });
