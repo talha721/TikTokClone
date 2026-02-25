@@ -1,13 +1,15 @@
 import { useTheme } from "@/hooks/use-theme";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseUrl } from "@/lib/supabase";
 import { fetchMessages, markMessagesRead, sendMessage, subscribeToMessages, subscribeToTyping } from "@/services/messages";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Message } from "@/types/types";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   AppState,
   FlatList,
@@ -168,6 +170,88 @@ export default function ChatScreen() {
     };
   }, [conversationId, user]);
 
+  // ─── Media helpers ────────────────────────────────────────────────────────
+  const uploadMedia = async (uri: string, mediaType: "image" | "video"): Promise<string> => {
+    const ext = mediaType === "image" ? "jpg" : "mp4";
+    // Path: <userId>/<conversationId>/<timestamp>.<ext>
+    // The first segment MUST be the user's ID so the INSERT RLS policy resolves correctly.
+    const fileName = `${user!.id}/${conversationId}/${Date.now()}.${ext}`;
+    const mimeType = mediaType === "image" ? "image/jpeg" : "video/mp4";
+
+    // React Native: use FormData with the local file URI — blob() doesn't work here
+    const formData = new FormData();
+    formData.append("file", { uri, name: fileName, type: mimeType } as any);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/chat-media/${fileName}`;
+    const res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "x-upsert": "true",
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Upload failed (${res.status}): ${text}`);
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("chat-media").getPublicUrl(fileName);
+    return publicUrl;
+  };
+
+  const handlePickMedia = async (source: "gallery" | "camera") => {
+    if (!user || !conversationId || sending) return;
+
+    let result: ImagePicker.ImagePickerResult;
+    if (source === "camera") {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Camera access is required to take photos/videos.");
+        return;
+      }
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images", "videos"],
+        quality: 0.8,
+        videoMaxDuration: 60,
+      });
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission needed", "Photo library access is required to share media.");
+        return;
+      }
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images", "videos"],
+        quality: 0.8,
+        videoMaxDuration: 60,
+      });
+    }
+
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const mediaType = asset.type === "video" ? "video" : "image";
+
+    setSending(true);
+    try {
+      const url = await uploadMedia(asset.uri, mediaType);
+      const prefix = mediaType === "image" ? "__IMAGE__:" : "__VIDEO__:";
+      const sent = await sendMessage(conversationId, user.id, prefix + url);
+      setMessages((prev) => [...prev, sent]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+    } catch (err) {
+      console.error("Failed to send media:", err);
+      Alert.alert("Error", "Failed to send media. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || !user || !conversationId || sending) return;
     const content = input.trim();
@@ -206,6 +290,9 @@ export default function ChatScreen() {
     const isTemp = String(item.id ?? "").startsWith("temp-");
     const prevMsg = messages[index - 1];
     const showTimestamp = !prevMsg || new Date(item.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 5 * 60 * 1000;
+    const isImage = item.content.startsWith("__IMAGE__:");
+    const isVideo = item.content.startsWith("__VIDEO__:");
+    const mediaUrl = isImage || isVideo ? item.content.replace(/^__(IMAGE|VIDEO)__:/, "") : null;
 
     return (
       <>
@@ -219,14 +306,26 @@ export default function ChatScreen() {
           </Text>
         )}
         <View style={[styles.bubbleWrapper, isMe ? styles.myBubbleWrapper : styles.theirBubbleWrapper]}>
-          <View
-            style={[
-              styles.bubble,
-              isMe ? [styles.myBubble, isTemp && { opacity: 0.6 }] : [styles.theirBubble, { backgroundColor: isDark ? "#2a2a2a" : "#f0f0f0" }],
-            ]}
-          >
-            <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.text }]}>{item.content}</Text>
-          </View>
+          {mediaUrl ? (
+            <View style={[styles.mediaBubble, isTemp && { opacity: 0.6 }]}>
+              {isImage ? (
+                <Image source={{ uri: mediaUrl }} style={styles.mediaImage} resizeMode="cover" />
+              ) : (
+                <View style={[styles.mediaImage, styles.videoPlaceholder, { backgroundColor: isDark ? "#1a1a1a" : "#ddd" }]}>
+                  <Ionicons name="play-circle" size={48} color="#fff" />
+                </View>
+              )}
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.bubble,
+                isMe ? [styles.myBubble, isTemp && { opacity: 0.6 }] : [styles.theirBubble, { backgroundColor: isDark ? "#2a2a2a" : "#f0f0f0" }],
+              ]}
+            >
+              <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.text }]}>{item.content}</Text>
+            </View>
+          )}
           <Text style={[styles.bubbleTime, { color: colors.icon }]}>{formatTime(item.created_at)}</Text>
         </View>
       </>
@@ -262,12 +361,12 @@ export default function ChatScreen() {
             <Text style={[styles.headerSub, { color: colors.icon }]}>tap to view profile</Text>
           </View>
 
-          <TouchableOpacity>
+          {/* <TouchableOpacity>
             <Feather name="video" size={22} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity style={{ marginLeft: 14 }}>
             <Feather name="phone" size={22} color={colors.text} />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
 
         {/* Messages */}
@@ -305,8 +404,13 @@ export default function ChatScreen() {
           )}
 
           {/* Input bar */}
-          <View style={[styles.inputBar, { borderTopColor: colors.icon + "33", backgroundColor: colors.background }]}>
-            <TouchableOpacity>
+          <View
+            style={[
+              styles.inputBar,
+              { borderTopColor: colors.icon + "33", backgroundColor: colors.background, paddingBottom: insets.bottom > 0 ? insets.bottom : 10 },
+            ]}
+          >
+            <TouchableOpacity onPress={() => handlePickMedia("camera")} disabled={sending}>
               <Feather name="camera" size={24} color={colors.icon} />
             </TouchableOpacity>
             <TextInput
@@ -335,11 +439,11 @@ export default function ChatScreen() {
               onSubmitEditing={handleSend}
             />
             {input.trim() ? (
-              <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-                <Ionicons name="send" size={18} color="#fff" />
+              <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={sending}>
+                {sending ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={18} color="#fff" />}
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => handlePickMedia("gallery")} disabled={sending}>
                 <Feather name="image" size={24} color={colors.icon} />
               </TouchableOpacity>
             )}
@@ -388,9 +492,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
     gap: 10,
     borderTopWidth: 1,
+  },
+  mediaBubble: {
+    maxWidth: "75%",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  mediaImage: {
+    width: 220,
+    height: 220,
+    borderRadius: 14,
+  },
+  videoPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
     flex: 1,
