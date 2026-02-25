@@ -126,8 +126,8 @@ const Profile: FC = () => {
   };
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ["posts"],
-    queryFn: ({ pageParam }) => fetchPosts(pageParam, user?.id as string),
+    queryKey: ["posts", "profile", user?.id],
+    queryFn: ({ pageParam }) => fetchPosts(pageParam, user?.id as string, user?.id as string),
     initialPageParam: { limit: 12, cursor: undefined },
     getNextPageParam: (lastPage) => {
       if (lastPage.length === 0) return undefined;

@@ -12,12 +12,16 @@ type Paginationinput = {
   limit?: number;
 };
 
-export const fetchPosts = async (pageParams: Paginationinput, currentUserId: string) => {
+export const fetchPosts = async (pageParams: Paginationinput, currentUserId: string, profileUserId?: string) => {
   let query = supabase
     .from("posts")
     .select("*, user:profiles(*), nrOfComments:comments(count), nrOfLikes:post_likes(count), user_liked:post_likes(user_id)")
     .eq("post_likes.user_id", currentUserId)
     .order("id", { ascending: false });
+
+  if (profileUserId) {
+    query = query.eq("user_id", profileUserId);
+  }
 
   if (pageParams.limit) {
     query = query.limit(pageParams.limit);
