@@ -3,7 +3,7 @@ import { fetchConversations, getOrCreateConversation, searchUsers, subscribeToCo
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Conversation } from "@/types/types";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, Keyboard, RefreshControl, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ type UserResult = { id: string; username: string; avatar_url?: string };
 const ConversationRow = ({ item }: { item: Conversation }) => {
   const { colors } = useTheme();
   const other = item.otherUser;
+  const unread = (item.unread_count ?? 0) > 0;
 
   const formatTime = (iso: string) => {
     const date = new Date(iso);
@@ -26,6 +27,13 @@ const ConversationRow = ({ item }: { item: Conversation }) => {
     return date.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
+  const formatLastMessage = (msg?: string) => {
+    if (!msg) return "Start a conversation";
+    if (msg.startsWith("__IMAGE__:")) return "📷 Photo";
+    if (msg.startsWith("__VIDEO__:")) return "🎥 Video";
+    return msg;
+  };
+
   const handlePress = () => {
     router.push({
       pathname: "/(protected)/chat/[conversationId]",
@@ -33,6 +41,7 @@ const ConversationRow = ({ item }: { item: Conversation }) => {
         conversationId: item.id,
         username: other?.username ?? "Unknown",
         avatar: (other as any)?.avatar_url ?? "",
+        userId: (other as any)?.id ?? "",
       },
     });
   };
@@ -48,15 +57,22 @@ const ConversationRow = ({ item }: { item: Conversation }) => {
       )}
 
       <View style={styles.rowText}>
-        <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.rowName, { color: colors.text, fontWeight: unread ? "700" : "600" }]} numberOfLines={1}>
           {other?.username ?? "Unknown"}
         </Text>
-        <Text style={[styles.rowSub, { color: colors.icon }]} numberOfLines={1}>
-          {item.last_message ?? "Start a conversation"}
+        <Text style={[styles.rowSub, { color: unread ? colors.text : colors.icon, fontWeight: unread ? "600" : "400" }]} numberOfLines={1}>
+          {formatLastMessage(item.last_message)}
         </Text>
       </View>
 
-      <Text style={[styles.rowTime, { color: colors.icon }]}>{formatTime(item.last_message_at)}</Text>
+      <View style={styles.rowMeta}>
+        <Text style={[styles.rowTime, { color: unread ? "#fe2c55" : colors.icon }]}>{formatTime(item.last_message_at)}</Text>
+        {unread && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadCount}>{(item.unread_count ?? 0) > 99 ? "99+" : item.unread_count}</Text>
+          </View>
+        )}
+      </View>
     </TouchableOpacity>
   );
 };
@@ -118,30 +134,21 @@ const Inbox = () => {
     if (!user) return;
     loadConversations().finally(() => setLoading(false));
 
-    const unsubscribe = subscribeToConversations(user.id, (payload) => {
-      const updated = payload?.new;
-      if (updated?.id) {
-        // Update the preview inline and re-sort — no full refetch needed
-        setConversations((prev) => {
-          const exists = prev.some((c) => c.id === updated.id);
-          if (!exists) {
-            // New conversation we don't have yet — do a full fetch
-            loadConversations();
-            return prev;
-          }
-          return [...prev]
-            .map((c) => (c.id === updated.id ? { ...c, last_message: updated.last_message, last_message_at: updated.last_message_at } : c))
-            .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
-        });
-      } else {
-        loadConversations();
-      }
+    const unsubscribe = subscribeToConversations(user.id, () => {
+      loadConversations();
     });
 
     return () => {
       unsubscribe();
     };
   }, [user, loadConversations]);
+
+  // Reload when navigating back from chat (so unread badges clear after read)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) loadConversations();
+    }, [user, loadConversations]),
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -205,6 +212,7 @@ const Inbox = () => {
           conversationId: conv.id,
           username: targetUser.username,
           avatar: targetUser.avatar_url ?? "",
+          userId: targetUser.id,
         },
       });
     } catch (err) {
@@ -435,6 +443,17 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: "600" },
   rowSub: { fontSize: 13 },
   rowTime: { fontSize: 11 },
+  rowMeta: { alignItems: "flex-end", gap: 4 },
+  unreadBadge: {
+    backgroundColor: "#fe2c55",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  unreadCount: { color: "#fff", fontSize: 11, fontWeight: "700" },
 });
 
 export default Inbox;

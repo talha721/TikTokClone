@@ -30,10 +30,12 @@ export default function ChatScreen() {
     conversationId: string;
     username: string;
     avatar?: string;
+    userId?: string;
   }>();
   const conversationId = Array.isArray(params.conversationId) ? params.conversationId[0] : params.conversationId;
   const username = Array.isArray(params.username) ? params.username[0] : params.username;
   const avatar = Array.isArray(params.avatar) ? params.avatar[0] : params.avatar;
+  const userId = Array.isArray(params.userId) ? params.userId[0] : params.userId;
   const { colors, isDark } = useTheme();
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
@@ -346,20 +348,30 @@ export default function ChatScreen() {
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
 
-          {avatar ? (
-            <Image source={{ uri: avatar }} style={styles.headerAvatar} />
-          ) : (
-            <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.icon + "44" }]}>
-              <Ionicons name="person" size={20} color={colors.icon} />
-            </View>
-          )}
+          <TouchableOpacity
+            style={styles.headerProfile}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (userId) {
+                router.push({ pathname: "/(protected)/userProfile", params: { userId, username, avatar: avatar ?? "" } });
+              }
+            }}
+          >
+            {avatar ? (
+              <Image source={{ uri: avatar }} style={styles.headerAvatar} />
+            ) : (
+              <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.icon + "44" }]}>
+                <Ionicons name="person" size={20} color={colors.icon} />
+              </View>
+            )}
 
-          <View style={styles.headerInfo}>
-            <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
-              {username}
-            </Text>
-            <Text style={[styles.headerSub, { color: colors.icon }]}>tap to view profile</Text>
-          </View>
+            <View style={styles.headerInfo}>
+              <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
+                {username}
+              </Text>
+              <Text style={[styles.headerSub, { color: colors.icon }]}>tap to view profile</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* <TouchableOpacity>
             <Feather name="video" size={22} color={colors.text} />
@@ -465,6 +477,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   backBtn: { padding: 2 },
+  headerProfile: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   headerAvatar: { width: 38, height: 38, borderRadius: 19 },
   headerAvatarPlaceholder: {
     width: 38,

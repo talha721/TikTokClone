@@ -52,6 +52,7 @@ export type Conversation = {
   last_message_at: string;
   created_at: string;
   otherUser?: User;
+  unread_count?: number;
 };
 
 export type Message = {

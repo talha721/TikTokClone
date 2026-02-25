@@ -31,10 +31,31 @@ export const fetchConversations = async (userId: string): Promise<Conversation[]
 
   if (error) throw error;
 
-  return (data || []).map((conv: any) => ({
+  const conversations = (data || []).map((conv: any) => ({
     ...conv,
     otherUser: conv.user1_id === userId ? conv.user2 : conv.user1,
   })) as Conversation[];
+
+  // Fetch unread counts for all conversations in a single query
+  const convIds = conversations.map((c) => c.id);
+  if (convIds.length > 0) {
+    const { data: unreadData } = await supabase
+      .from("messages")
+      .select("conversation_id")
+      .in("conversation_id", convIds)
+      .neq("sender_id", userId)
+      .is("read_at", null);
+
+    if (unreadData) {
+      const unreadMap: Record<string, number> = {};
+      unreadData.forEach((msg: any) => {
+        unreadMap[msg.conversation_id] = (unreadMap[msg.conversation_id] || 0) + 1;
+      });
+      return conversations.map((c) => ({ ...c, unread_count: unreadMap[c.id] || 0 }));
+    }
+  }
+
+  return conversations;
 };
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
@@ -51,19 +72,34 @@ export const sendMessage = async (conversationId: string, senderId: string, cont
 
   if (error) throw error;
 
-  // Update last_message preview on conversation
-  await supabase.from("conversations").update({ last_message: content, last_message_at: new Date().toISOString() }).eq("id", conversationId);
+  // Store a human-readable preview instead of raw media URLs
+  let preview = content;
+  if (content.startsWith("__IMAGE__:")) preview = "📷 Photo";
+  else if (content.startsWith("__VIDEO__:")) preview = "🎥 Video";
+
+  const { error: convError } = await supabase
+    .from("conversations")
+    .update({ last_message: preview, last_message_at: new Date().toISOString() })
+    .eq("id", conversationId);
+
+  if (convError) {
+    console.error("[sendMessage] Failed to update last_message:", convError.message, convError.details);
+  }
 
   return data as Message;
 };
 
 export const markMessagesRead = async (conversationId: string, userId: string) => {
-  await supabase
+  const { error } = await supabase
     .from("messages")
     .update({ read_at: new Date().toISOString() })
     .eq("conversation_id", conversationId)
     .neq("sender_id", userId)
     .is("read_at", null);
+
+  if (error) {
+    console.error("[markMessagesRead] Failed:", error.message, error.details);
+  }
 };
 
 // ─── Realtime ─────────────────────────────────────────────────────────────────
