@@ -1,7 +1,7 @@
 import { useTheme } from "@/hooks/use-theme";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Dimensions, FlatList, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +26,7 @@ type PostItem = {
 export default function UserProfileScreen() {
   const { colors, isDark } = useTheme();
   const router = useRouter();
+
   const params = useLocalSearchParams<{ userId: string; username: string; avatar?: string }>();
 
   const userId = Array.isArray(params.userId) ? params.userId[0] : params.userId;
@@ -82,77 +83,80 @@ export default function UserProfileScreen() {
   const displayProfile = profile ?? { id: userId, username: paramUsername ?? "Unknown", avatar_url: paramAvatar };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+    <>
+      <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.icon + "22" }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-          {displayProfile.username}
-        </Text>
-        <View style={{ width: 32 }} />
-      </View>
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color="#fe2c55" />
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.icon + "22" }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+            {displayProfile.username}
+          </Text>
+          <View style={{ width: 32 }} />
         </View>
-      ) : (
-        <FlatList
-          data={posts}
-          numColumns={3}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          columnWrapperStyle={styles.columnWrapper}
-          ListHeaderComponent={
-            <View style={styles.profileSection}>
-              {/* Avatar */}
-              {displayProfile.avatar_url ? (
-                <Image source={{ uri: displayProfile.avatar_url }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.icon + "33" }]}>
-                  <Ionicons name="person" size={40} color={colors.icon} />
+
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator color="#fe2c55" />
+          </View>
+        ) : (
+          <FlatList
+            data={posts}
+            numColumns={3}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            columnWrapperStyle={styles.columnWrapper}
+            ListHeaderComponent={
+              <View style={styles.profileSection}>
+                {/* Avatar */}
+                {displayProfile.avatar_url ? (
+                  <Image source={{ uri: displayProfile.avatar_url }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatarPlaceholder, { backgroundColor: colors.icon + "33" }]}>
+                    <Ionicons name="person" size={40} color={colors.icon} />
+                  </View>
+                )}
+
+                <Text style={[styles.username, { color: colors.text }]}>@{displayProfile.username}</Text>
+
+                {(displayProfile as any).bio ? <Text style={[styles.bio, { color: colors.icon }]}>{(displayProfile as any).bio}</Text> : null}
+
+                {/* Stats row */}
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statValue, { color: colors.text }]}>{posts.length}</Text>
+                    <Text style={[styles.statLabel, { color: colors.icon }]}>Videos</Text>
+                  </View>
                 </View>
-              )}
 
-              <Text style={[styles.username, { color: colors.text }]}>@{displayProfile.username}</Text>
-
-              {(displayProfile as any).bio ? <Text style={[styles.bio, { color: colors.icon }]}>{(displayProfile as any).bio}</Text> : null}
-
-              {/* Stats row */}
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={[styles.statValue, { color: colors.text }]}>{posts.length}</Text>
-                  <Text style={[styles.statLabel, { color: colors.icon }]}>Videos</Text>
-                </View>
+                {posts.length > 0 && <View style={[styles.divider, { backgroundColor: colors.icon + "22" }]} />}
               </View>
-
-              {posts.length > 0 && <View style={[styles.divider, { backgroundColor: colors.icon + "22" }]} />}
-            </View>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="videocam-outline" size={48} color={colors.icon + "66"} />
-              <Text style={[styles.emptyText, { color: colors.icon }]}>No videos yet</Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <View style={styles.gridItem}>
-              {item.thumbnail ? (
-                <Image source={{ uri: item.thumbnail }} style={styles.gridThumb} resizeMode="cover" />
-              ) : (
-                <View style={[styles.gridThumb, styles.gridPlaceholder, { backgroundColor: isDark ? "#1a1a1a" : "#e5e5e5" }]}>
-                  <Ionicons name="play-circle-outline" size={28} color={colors.icon} />
-                </View>
-              )}
-            </View>
-          )}
-        />
-      )}
-    </SafeAreaView>
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="videocam-outline" size={48} color={colors.icon + "66"} />
+                <Text style={[styles.emptyText, { color: colors.icon }]}>No videos yet</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <View style={styles.gridItem}>
+                {item.thumbnail ? (
+                  <Image source={{ uri: item.thumbnail }} style={styles.gridThumb} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.gridThumb, styles.gridPlaceholder, { backgroundColor: isDark ? "#1a1a1a" : "#e5e5e5" }]}>
+                    <Ionicons name="play-circle-outline" size={28} color={colors.icon} />
+                  </View>
+                )}
+              </View>
+            )}
+          />
+        )}
+      </SafeAreaView>
+    </>
   );
 }
 
