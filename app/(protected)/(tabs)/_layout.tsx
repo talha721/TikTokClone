@@ -26,10 +26,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="friends"
+        name="notifications"
         options={{
-          title: "Friends",
-          tabBarIcon: ({ color }) => <Feather name="users" size={24} color={color} />,
+          title: "Notifications",
+          tabBarIcon: ({ color }) => <Feather name="bell" size={24} color={color} />,
         }}
       />
       <Tabs.Screen

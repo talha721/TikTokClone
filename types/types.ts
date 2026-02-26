@@ -63,3 +63,18 @@ export type Message = {
   created_at: string;
   read_at?: string;
 };
+
+export type NotificationType = "like" | "comment" | "follow" | "mention" | "post";
+
+export type AppNotification = {
+  id: string;
+  user_id: string;
+  actor_id: string;
+  type: NotificationType;
+  post_id?: string | number;
+  comment?: string;
+  read: boolean;
+  created_at: string;
+  actor?: User;
+  post?: { id: string | number; thumbnail_url?: string };
+};

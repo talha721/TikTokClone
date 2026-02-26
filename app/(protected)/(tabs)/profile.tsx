@@ -1,11 +1,13 @@
 import { useTheme } from "@/hooks/use-theme";
 import { supabase } from "@/lib/supabase";
+import { fetchFollowCounts, subscribeToFollowCounts } from "@/services/follows";
 import { fetchPosts } from "@/services/posts";
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import React, { FC, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, Dimensions, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableWithoutFeedback, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthStore } from "../../../stores/useAuthStore";
@@ -41,6 +43,24 @@ const Profile: FC = () => {
   const [activeTab, setActiveTab] = useState("videos");
   const [menuVisible, setMenuVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
+
+  // Re-fetch counts every time the profile tab is focused (reliable fallback)
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.id) return;
+      fetchFollowCounts(user.id)
+        .then(setFollowCounts)
+        .catch(() => {});
+    }, [user?.id]),
+  );
+
+  // Real-time subscription: re-fetches accurate counts on any follow change
+  useEffect(() => {
+    if (!user?.id) return;
+    const unsub = subscribeToFollowCounts(user.id, (counts) => setFollowCounts(counts));
+    return unsub;
+  }, [user?.id]);
 
   const DRAWER_WIDTH = windowWidth * 0.72;
   const slideAnim = useRef(new Animated.Value(DRAWER_WIDTH)).current;
@@ -205,12 +225,12 @@ const Profile: FC = () => {
       {/* Stats */}
       <View style={styles.statsRow}>
         <Pressable style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: textPrimary }]}>0</Text>
+          <Text style={[styles.statNumber, { color: textPrimary }]}>{followCounts.following}</Text>
           <Text style={[styles.statLabel, { color: textSecondary }]}>Following</Text>
         </Pressable>
         <View style={[styles.statDivider, { backgroundColor: borderColor }]} />
         <Pressable style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: textPrimary }]}>0</Text>
+          <Text style={[styles.statNumber, { color: textPrimary }]}>{followCounts.followers}</Text>
           <Text style={[styles.statLabel, { color: textSecondary }]}>Followers</Text>
         </Pressable>
         <View style={[styles.statDivider, { backgroundColor: borderColor }]} />
