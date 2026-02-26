@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { PostInput } from "@/types/types";
+import { createNotification } from "./notifications";
 
 type StorageInput = {
   fileName: string;
@@ -85,7 +86,7 @@ export const createPost = async (postData: PostInput) => {
 
 export const likePostService = async (postId: string, userId: string) => {
   const { data: existing } = await supabase.from("post_likes").select("id").eq("post_id", postId).eq("user_id", userId).maybeSingle();
-  const { data: postData } = await supabase.from("posts").select("likes_count").eq("id", postId).single();
+  const { data: postData } = await supabase.from("posts").select("likes_count, user_id").eq("id", postId).single();
 
   let currentCount = postData?.likes_count || 0;
 
@@ -107,6 +108,16 @@ export const likePostService = async (postId: string, userId: string) => {
       .from("posts")
       .update({ likes_count: currentCount + 1 })
       .eq("id", postId);
+
+    // Notify the post owner (skip self-likes — handled inside createNotification)
+    if (postData?.user_id) {
+      await createNotification({
+        userId: postData.user_id,
+        actorId: userId,
+        type: "like",
+        postId,
+      });
+    }
 
     return { action: "liked" };
   }

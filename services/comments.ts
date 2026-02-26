@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { createNotification } from "./notifications";
 
 export const fetchCommentsService = async (postId: string, currentUserId: string | null) => {
   const { data: comments, error: commentErr } = await supabase
@@ -36,7 +37,7 @@ export const fetchCommentsService = async (postId: string, currentUserId: string
 
 export const createComment = async (postId: string, comment: string, userId: string) => {
   const { data: comment_data, error: commentErr } = await supabase.from("comments").insert({ post_id: postId, comment, user_id: userId }).throwOnError();
-  const { data: post_data } = await supabase.from("posts").select("comments_count").eq("id", postId).single();
+  const { data: post_data } = await supabase.from("posts").select("comments_count, user_id").eq("id", postId).single();
 
   if (commentErr) throw commentErr;
 
@@ -45,6 +46,17 @@ export const createComment = async (postId: string, comment: string, userId: str
     .from("posts")
     .update({ comments_count: currentCount + 1 })
     .eq("id", postId);
+
+  // Notify the post owner (skip self-comments — handled inside createNotification)
+  if (post_data?.user_id) {
+    await createNotification({
+      userId: post_data.user_id,
+      actorId: userId,
+      type: "comment",
+      postId,
+      comment,
+    });
+  }
 
   return comment_data;
 };

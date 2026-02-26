@@ -1,3 +1,4 @@
+import { supabase } from "@/lib/supabase";
 import { createComment, deleteComment, fetchCommentsService, likeComment } from "@/services/comments";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Comment } from "@/types/types";
@@ -24,13 +25,15 @@ type CommentsModalProps = {
   postId: string;
   commentCount: number;
   refetch: () => void;
+  onCountChange?: (delta: 1 | -1) => void;
 };
 
-const CommentsModal = ({ visible, onClose, postId, commentCount, refetch }: CommentsModalProps) => {
+const CommentsModal = ({ visible, onClose, postId, commentCount, refetch, onCountChange }: CommentsModalProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   // const [loading, setLoading] = useState(false);
   const slideAnim = useRef(new Animated.Value(Dimensions.get("window").height)).current;
+  const broadcastRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const user = useAuthStore((state) => state.user);
   const currentUserId = user?.id || "";
@@ -69,23 +72,54 @@ const CommentsModal = ({ visible, onClose, postId, commentCount, refetch }: Comm
     }
   };
 
+  // Real-time subscription: auto-add/remove comments as they come in.
+  // postgres_changes handles it when the table is in the Supabase publication.
+  // The 'comment-list-updated' broadcast handles it on every other device regardless.
+  useEffect(() => {
+    if (!visible || !postId) return;
+
+    const channel = supabase
+      .channel(`comments-modal:${postId}`)
+      .on("broadcast", { event: "comment-list-updated" }, () => {
+        fetchComments();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments", filter: `post_id=eq.${postId}` }, async (payload) => {
+        const { data } = await supabase
+          .from("comments")
+          .select("*, user:profiles(username)")
+          .eq("id", (payload.new as any).id)
+          .single();
+        if (data) {
+          setComments((prev) => {
+            if (prev.some((c) => c.id === data.id)) return prev;
+            return [data as Comment, ...prev];
+          });
+        }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "comments", filter: `post_id=eq.${postId}` }, (payload) => {
+        setComments((prev) => prev.filter((c) => c.id !== (payload.old as any).id));
+      })
+      .subscribe();
+
+    // Store ref so add/delete handlers can broadcast on this channel
+    broadcastRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      broadcastRef.current = null;
+    };
+  }, [visible, postId]);
+
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
 
     try {
       await createComment(postId, newComment, currentUserId);
-
-      const newCommentObj: Comment = {
-        id: Date.now().toString(),
-        post_id: postId,
-        user_id: currentUserId,
-        comment: newComment,
-        created_at: new Date().toISOString(),
-      };
       fetchComments();
       refetch();
-      setComments([newCommentObj, ...comments]);
       setNewComment("");
+      onCountChange?.(1);
+      // Tell other devices' open comment modals to refresh their list
+      broadcastRef.current?.send({ type: "broadcast", event: "comment-list-updated", payload: {} });
     } catch (error) {
       console.error("Error adding comment:", error);
     }
@@ -108,6 +142,8 @@ const CommentsModal = ({ visible, onClose, postId, commentCount, refetch }: Comm
     try {
       await deleteComment(commentId);
       fetchComments();
+      onCountChange?.(-1);
+      broadcastRef.current?.send({ type: "broadcast", event: "comment-list-updated", payload: {} });
     } catch (error) {
       console.log("🚀 ~ handleDeleteComment ~ error:", error);
     }
