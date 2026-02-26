@@ -68,36 +68,48 @@ export default function PostListItems({ postItem, isActive, videoHeight, refetch
 
   const player = useVideoPlayer(video_url, (player) => {
     player.loop = true;
-    // player.play();
   });
 
-  // Ensure the returned player is a usable object before calling play/pause
-  const isValidPlayer = (p: any): p is { play: () => void; pause: () => void } =>
-    p && typeof p === "object" && typeof p.play === "function" && typeof p.pause === "function";
+  // Track whether this component is still mounted so we never call play/pause
+  // on a released native VideoPlayer object.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
+  const safePlay = () => {
+    if (!mountedRef.current) return;
+    try {
+      player.play();
+    } catch {}
+  };
+
+  const safePause = () => {
+    if (!mountedRef.current) return;
+    try {
+      player.pause();
+    } catch {}
+  };
+
+  // Play/pause based on whether this item is the active (visible) one.
+  useEffect(() => {
+    if (isActive) {
+      safePlay();
+    } else {
+      safePause();
+    }
+  }, [isActive]);
+
+  // Pause when the user navigates away from the screen entirely.
   useFocusEffect(
     useCallback(() => {
-      const curr = player;
-      if (!curr || !isValidPlayer(curr)) return;
-
-      try {
-        if (isActive) {
-          curr.play();
-        }
-      } catch (error) {
-        console.log("🚀 ~ PostListItems ~ error:", error);
-      }
-
       return () => {
-        try {
-          if (isValidPlayer(curr) && isActive) {
-            curr.pause();
-          }
-        } catch (error) {
-          console.log("🚀 ~ PostListItems ~ error:", error);
-        }
+        safePause();
       };
-    }, [isActive, player]),
+    }, []),
   );
 
   const handlePostLike = async (postId: string) => {

@@ -22,9 +22,9 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 ];
 
 const filterMap: Record<FilterTab, NotificationType[]> = {
-  all: ["like", "comment", "follow", "mention", "post"],
+  all: ["like", "comment", "reply", "follow", "mention", "post"],
   likes: ["like"],
-  comments: ["comment", "mention"],
+  comments: ["comment", "reply", "mention"],
   follows: ["follow"],
 };
 
@@ -45,6 +45,8 @@ function buildMessage(n: AppNotification): string {
       return "started following you";
     case "comment":
       return n.comment ? `commented: "${n.comment}"` : "commented on your video";
+    case "reply":
+      return n.comment ? `replied: "${n.comment}"` : "replied to your comment";
     case "mention":
       return "mentioned you in a comment";
     case "post":
@@ -60,6 +62,8 @@ function NotificationTypeIcon({ type, size = 14 }: { type: NotificationType; siz
       return <Ionicons name="heart" size={size} color="#fe2c55" />;
     case "comment":
       return <Ionicons name="chatbubble" size={size} color="#4a90d9" />;
+    case "reply":
+      return <Ionicons name="return-down-forward" size={size} color="#00bcd4" />;
     case "follow":
       return <Ionicons name="person-add" size={size} color="#00c853" />;
     case "mention":
@@ -75,6 +79,8 @@ function iconBg(type: NotificationType): string {
       return "#ffe0e6";
     case "comment":
       return "#e3f0fb";
+    case "reply":
+      return "#e0f9fc";
     case "follow":
       return "#e0f7ea";
     case "mention":
@@ -183,6 +189,7 @@ const Notifications = () => {
       if (!user) return;
 
       loadNotifications();
+      markAllNotificationsRead(user.id).catch(() => {});
 
       const unsub = subscribeToNotifications(user.id, (newNotif) => {
         setNotifications((prev) => [newNotif, ...prev]);

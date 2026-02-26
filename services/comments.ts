@@ -2,60 +2,93 @@ import { supabase } from "@/lib/supabase";
 import { createNotification } from "./notifications";
 
 export const fetchCommentsService = async (postId: string, currentUserId: string | null) => {
-  const { data: comments, error: commentErr } = await supabase
+  // Fetch ALL comments (top-level + replies) ordered oldest-first so replies sort correctly
+  const { data: allComments, error: commentErr } = await supabase
     .from("comments")
     .select("*, user:profiles(username)")
     .eq("post_id", postId)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true })
     .throwOnError();
   if (commentErr) throw commentErr;
-  if (!comments || comments.length === 0) return [];
+  if (!allComments || allComments.length === 0) return [];
 
-  if (!currentUserId) return comments;
-
-  // fetch likes only for these comments
-  const commentIds = comments.map((c: any) => c.id);
-  const { data: likes, error: likesErr } = await supabase.from("comment_likes").select("comment_id, user_id").in("comment_id", commentIds).throwOnError();
-
-  if (likesErr) throw likesErr;
-
+  // fetch likes for all comments
+  const commentIds = allComments.map((c: any) => c.id);
   const counts: Record<string, number> = {};
   const likedSet = new Set<string>();
 
-  likes.forEach((l: any) => {
-    counts[l.comment_id] = (counts[l.comment_id] || 0) + 1;
-    if (l.user_id === currentUserId) likedSet.add(l.comment_id);
+  if (currentUserId) {
+    const { data: likes, error: likesErr } = await supabase.from("comment_likes").select("comment_id, user_id").in("comment_id", commentIds).throwOnError();
+    if (likesErr) throw likesErr;
+    likes.forEach((l: any) => {
+      counts[l.comment_id] = (counts[l.comment_id] || 0) + 1;
+      if (l.user_id === currentUserId) likedSet.add(l.comment_id);
+    });
+  }
+
+  // Attach likes data and initialise replies array
+  const byId: Record<string, any> = {};
+  allComments.forEach((c: any) => {
+    byId[c.id] = {
+      ...c,
+      likes_count: counts[c.id] || 0,
+      liked_by_current_user: likedSet.has(c.id),
+      replies: [],
+    };
   });
 
-  // attach likes_count and liked_by_current_user flags
-  return comments.map((c: any) => ({
-    ...c,
-    likes_count: counts[c.id] || 0,
-    liked_by_current_user: likedSet.has(c.id),
-  }));
+  // Group replies under their parent; collect top-level (oldest-first → reverse for newest-first)
+  const topLevel: any[] = [];
+  allComments.forEach((c: any) => {
+    if (!c.parent_id) {
+      topLevel.push(byId[c.id]);
+    } else if (byId[c.parent_id]) {
+      byId[c.parent_id].replies.push(byId[c.id]);
+    }
+  });
+
+  // Show newest top-level comments first
+  return topLevel.reverse();
 };
 
-export const createComment = async (postId: string, comment: string, userId: string) => {
-  const { data: comment_data, error: commentErr } = await supabase.from("comments").insert({ post_id: postId, comment, user_id: userId }).throwOnError();
-  const { data: post_data } = await supabase.from("posts").select("comments_count, user_id").eq("id", postId).single();
+export const createComment = async (postId: string, comment: string, userId: string, parentId?: number | null) => {
+  const insertData: Record<string, any> = { post_id: postId, comment, user_id: userId };
+  if (parentId) insertData.parent_id = parentId;
 
+  const { data: comment_data, error: commentErr } = await supabase.from("comments").insert(insertData).throwOnError();
   if (commentErr) throw commentErr;
 
-  let currentCount = post_data?.comments_count || 0;
-  await supabase
-    .from("posts")
-    .update({ comments_count: currentCount + 1 })
-    .eq("id", postId);
+  // Update comment count and send notification only for top-level comments
+  if (!parentId) {
+    const { data: post_data } = await supabase.from("posts").select("comments_count, user_id").eq("id", postId).single();
+    let currentCount = post_data?.comments_count || 0;
+    await supabase
+      .from("posts")
+      .update({ comments_count: currentCount + 1 })
+      .eq("id", postId);
 
-  // Notify the post owner (skip self-comments — handled inside createNotification)
-  if (post_data?.user_id) {
-    await createNotification({
-      userId: post_data.user_id,
-      actorId: userId,
-      type: "comment",
-      postId,
-      comment,
-    });
+    // Notify the post owner (skip self-comments — handled inside createNotification)
+    if (post_data?.user_id) {
+      await createNotification({
+        userId: post_data.user_id,
+        actorId: userId,
+        type: "comment",
+        postId,
+        comment,
+      });
+    }
+  } else {
+    // Notify the parent comment's author about the reply
+    const { data: parentComment } = await supabase.from("comments").select("user_id").eq("id", parentId).single();
+    if (parentComment?.user_id) {
+      await createNotification({
+        userId: parentComment.user_id,
+        actorId: userId,
+        type: "reply",
+        postId,
+        comment,
+      });
+    }
   }
 
   return comment_data;

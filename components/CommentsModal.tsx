@@ -31,7 +31,9 @@ type CommentsModalProps = {
 const CommentsModal = ({ visible, onClose, postId, commentCount, refetch, onCountChange }: CommentsModalProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  // const [loading, setLoading] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<{ id: number; username: string } | null>(null);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const inputRef = useRef<TextInput>(null);
   const slideAnim = useRef(new Animated.Value(Dimensions.get("window").height)).current;
   const broadcastRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -112,17 +114,49 @@ const CommentsModal = ({ visible, onClose, postId, commentCount, refetch, onCoun
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
 
+    const parentId = replyingTo?.id || null;
     try {
-      await createComment(postId, newComment, currentUserId);
+      await createComment(postId, newComment, currentUserId, parentId);
       fetchComments();
-      refetch();
+      if (!parentId) {
+        // Only top-level comments update the post's comment count
+        refetch();
+        onCountChange?.(1);
+      }
       setNewComment("");
-      onCountChange?.(1);
+      setReplyingTo(null);
+      // Expand the thread we just replied to so the reply is visible
+      if (parentId) {
+        setExpandedReplies((prev) => new Set(prev).add(parentId));
+      }
       // Tell other devices' open comment modals to refresh their list
       broadcastRef.current?.send({ type: "broadcast", event: "comment-list-updated", payload: {} });
     } catch (error) {
       console.error("Error adding comment:", error);
     }
+  };
+
+  const handleReply = (comment: Comment) => {
+    setReplyingTo({ id: Number(comment.id), username: comment.user?.username || "" });
+    setNewComment(`@${comment.user?.username} `);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const cancelReply = () => {
+    setReplyingTo(null);
+    setNewComment("");
+  };
+
+  const toggleReplies = (commentId: string) => {
+    setExpandedReplies((prev) => {
+      const next = new Set(prev);
+      if (next.has(commentId)) {
+        next.delete(commentId);
+      } else {
+        next.add(commentId);
+      }
+      return next;
+    });
   };
   // console.log("🚀 ~ CommentsModal ~ comments:", comments);
 
@@ -149,36 +183,53 @@ const CommentsModal = ({ visible, onClose, postId, commentCount, refetch, onCoun
     }
   };
 
-  const renderComment = ({ item }: { item: Comment }) => (
-    <View style={styles.commentItem}>
-      <View style={styles.commentAvatar}>
-        <Text style={styles.commentAvatarText}>U</Text>
+  const renderCommentItem = (item: Comment, isReply = false) => (
+    <View key={item.id} style={[styles.commentItem, isReply && styles.replyItem]}>
+      <View style={[styles.commentAvatar, isReply && styles.replyAvatar]}>
+        <Text style={styles.commentAvatarText}>{(item.user?.username?.[0] ?? "U").toUpperCase()}</Text>
       </View>
       <View style={styles.commentContent}>
         <Text style={styles.commentUsername}>{item.user?.username}</Text>
         <Text style={styles.commentText}>{item.comment}</Text>
         <View style={styles.commentFooter}>
           <Text style={styles.commentTime}>{new Date(item.created_at).toLocaleDateString()}</Text>
-          <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text style={styles.replyText}>Reply</Text>
-            {item.user_id === currentUserId && (
-              <Text style={styles.deleteText} onPress={() => handleDeleteComment(item.id)}>
-                Delete
-              </Text>
-            )}
-          </TouchableOpacity>
+          {!isReply && (
+            <TouchableOpacity onPress={() => handleReply(item)}>
+              <Text style={styles.replyText}>Reply</Text>
+            </TouchableOpacity>
+          )}
+          {item.user_id === currentUserId && (
+            <Text style={styles.deleteText} onPress={() => handleDeleteComment(item.id)}>
+              Delete
+            </Text>
+          )}
         </View>
+
+        {/* View/hide replies toggle */}
+        {!isReply && item.replies && item.replies.length > 0 && (
+          <TouchableOpacity style={styles.viewRepliesBtn} onPress={() => toggleReplies(item.id)}>
+            <View style={styles.replyLine} />
+            <Text style={styles.viewRepliesText}>
+              {expandedReplies.has(item.id) ? "Hide replies" : `View ${item.replies.length} ${item.replies.length === 1 ? "reply" : "replies"}`}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Inline replies */}
+        {!isReply && expandedReplies.has(item.id) && item.replies && item.replies.map((reply) => renderCommentItem(reply, true))}
       </View>
       <TouchableOpacity style={styles.likeButton} onPress={() => handleCommentLike(item.id)}>
         <FontAwesome
           name={item.liked_by_current_user && item.likes_count! > 0 ? "heart" : "heart-o"}
-          size={20}
+          size={isReply ? 16 : 20}
           color={item.liked_by_current_user && item.likes_count! > 0 ? "red" : "black"}
         />
         <Text style={{ marginTop: 4, fontSize: 12, textAlign: "center" }}>{item.likes_count || 0}</Text>
       </TouchableOpacity>
     </View>
   );
+
+  const renderComment = ({ item }: { item: Comment }) => renderCommentItem(item, false);
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
@@ -244,25 +295,36 @@ const CommentsModal = ({ visible, onClose, postId, commentCount, refetch, onCoun
 
             {/* Input Section */}
             <View style={styles.inputContainer}>
-              <View style={styles.inputAvatar}>
-                <Text style={styles.inputAvatarText}>M</Text>
+              {replyingTo && (
+                <View style={styles.replyBanner}>
+                  <Text style={styles.replyBannerText}>Replying to @{replyingTo.username}</Text>
+                  <TouchableOpacity onPress={cancelReply} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close" size={16} color="#666" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              <View style={styles.inputRow}>
+                <View style={styles.inputAvatar}>
+                  <Text style={styles.inputAvatarText}>{(user?.username?.[0] ?? "M").toUpperCase()}</Text>
+                </View>
+                <TextInput
+                  ref={inputRef}
+                  style={styles.input}
+                  placeholder={replyingTo ? `Reply to @${replyingTo.username}...` : "Add comment..."}
+                  placeholderTextColor="#999"
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  multiline
+                  maxLength={150}
+                />
+                <TouchableOpacity
+                  style={[styles.sendButton, !newComment.trim() && styles.sendButtonDisabled]}
+                  onPress={handleAddComment}
+                  disabled={!newComment.trim()}
+                >
+                  <Ionicons name="send" size={20} color={newComment.trim() ? "#FF0050" : "#ccc"} />
+                </TouchableOpacity>
               </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Add comment..."
-                placeholderTextColor="#999"
-                value={newComment}
-                onChangeText={setNewComment}
-                multiline
-                maxLength={150}
-              />
-              <TouchableOpacity
-                style={[styles.sendButton, !newComment.trim() && styles.sendButtonDisabled]}
-                onPress={handleAddComment}
-                disabled={!newComment.trim()}
-              >
-                <Ionicons name="send" size={20} color={newComment.trim() ? "#FF0050" : "#ccc"} />
-              </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
@@ -396,19 +458,59 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "red",
     fontWeight: "600",
-    marginLeft: 12,
+  },
+  viewRepliesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    gap: 8,
+  },
+  replyLine: {
+    width: 24,
+    height: 1,
+    backgroundColor: "#ccc",
+  },
+  viewRepliesText: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "600",
+  },
+  replyItem: {
+    marginTop: 8,
+    paddingLeft: 0,
+    borderLeftWidth: 0,
+  },
+  replyAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#aaa",
   },
   likeButton: {
     padding: 8,
   },
   inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
     backgroundColor: "white",
+  },
+  replyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  replyBannerText: {
+    fontSize: 12,
+    color: "#666",
+  },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   inputAvatar: {
     width: 32,

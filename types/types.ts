@@ -33,9 +33,11 @@ export type Comment = {
   user_id: string;
   comment: string;
   created_at: string;
+  parent_id?: number | null;
   user?: User;
   likes_count?: number;
   liked_by_current_user?: boolean;
+  replies?: Comment[];
 };
 
 export type NewCommentInput = {
@@ -64,7 +66,7 @@ export type Message = {
   read_at?: string;
 };
 
-export type NotificationType = "like" | "comment" | "follow" | "mention" | "post";
+export type NotificationType = "like" | "comment" | "reply" | "follow" | "mention" | "post";
 
 export type AppNotification = {
   id: string;

@@ -224,6 +224,24 @@ export const addLocallyDeletedMessage = async (conversationId: string, messageId
   } catch {}
 };
 
+export const fetchUnreadInboxCount = async (userId: string): Promise<number> => {
+  // Get all conversation IDs this user is part of
+  const { data: convs } = await supabase.from("conversations").select("id").or(`user1_id.eq.${userId},user2_id.eq.${userId}`);
+
+  if (!convs || convs.length === 0) return 0;
+  const convIds = convs.map((c: any) => c.id);
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .in("conversation_id", convIds)
+    .neq("sender_id", userId)
+    .is("read_at", null);
+
+  if (error) return 0;
+  return count ?? 0;
+};
+
 export const deleteConversation = async (conversationId: string): Promise<void> => {
   // Delete messages first, then the conversation
   await supabase.from("messages").delete().eq("conversation_id", conversationId);
