@@ -125,7 +125,8 @@ const SearchModal = ({ visible, onClose, currentUserId }: { visible: boolean; on
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const { height } = useWindowDimensions();
+  const { height: screenHeight } = useWindowDimensions();
+  const [containerHeight, setContainerHeight] = useState(screenHeight);
 
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<string>(TABS.FOR_YOU);
@@ -173,7 +174,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)}>
       <View style={styles.topBar}>
         <MaterialIcons name="live-tv" size={24} color="grey" />
         <View style={styles.navigationBar}>
@@ -188,18 +189,18 @@ export default function HomeScreen() {
 
       <FlatList
         data={posts}
-        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} videoHeight={height} refetch={refetch} />}
+        renderItem={({ item, index }) => <PostListItems postItem={item} isActive={index === currentIndex} videoHeight={containerHeight} refetch={refetch} />}
         keyExtractor={(item, index) => item.id?.toString() || index.toString()}
         getItemLayout={(data, index) => ({
-          length: height,
-          offset: height * index,
+          length: containerHeight,
+          offset: containerHeight * index,
           index,
         })}
         initialNumToRender={2}
         maxToRenderPerBatch={2}
         windowSize={3}
         showsVerticalScrollIndicator={false}
-        snapToInterval={height}
+        snapToInterval={containerHeight}
         snapToAlignment="start"
         decelerationRate={"fast"}
         disableIntervalMomentum={true}

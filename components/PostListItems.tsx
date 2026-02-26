@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   interactionBar: {
     position: "absolute",
     right: 20,
-    bottom: 100,
+    bottom: 24,
     alignItems: "center",
     gap: 25,
   },
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   videoInfo: {
     position: "absolute",
     left: 20,
-    bottom: 100,
+    bottom: 24,
     right: 100,
     gap: 5,
   },
